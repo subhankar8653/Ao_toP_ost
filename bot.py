@@ -410,34 +410,62 @@ def ordinal(n):
     return f"{n}{'th' if 11 <= n % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
+_MAPS = {"sans": (0x1D5D4, 0x1D5EE, 0x1D7EC),      # bold sans  : 𝗕𝗼𝗹𝗱
+         "script": (0x1D4D0, 0x1D4EA, None),        # bold script: 𝓑𝓸𝓵𝓭
+         "italic": (0x1D468, 0x1D482, None)}        # bold italic serif
+
+
+def fancy(text, style="sans"):
+    """normal text ko stylish Unicode font mein badalta hai (caption mein font nahi hota, isliye)"""
+    A, a, D = _MAPS[style]
+    out = []
+    for ch in str(text):
+        if "A" <= ch <= "Z":
+            out.append(chr(A + ord(ch) - 65))
+        elif "a" <= ch <= "z":
+            out.append(chr(a + ord(ch) - 97))
+        elif D and "0" <= ch <= "9":
+            out.append(chr(D + ord(ch) - 48))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+RULE = "\u2501" * 12
+KIND_CAP = {
+    # label, quote style, quote icon
+    "love": ("THOUGHT OF THE DAY", "italic"),
+    "motivation": ("MOTIVATION OF THE DAY", "sans"),
+    "fact": ("UNBELIEVABLE FACT OF THE DAY", "sans"),
+}
+
+
 def build_caption(name, cfg, d):
     now = datetime.now(TZ)
-    e = lambda s: html.escape(str(s).strip())
-    q = lambda s: html.escape(str(s).strip().strip('"\u201c\u201d'))
-    tags = " ".join(t if t.startswith("#") else "#" + t for t in d["hashtags"][:3])
-    handle = f"@{name}"
     kind = cfg["kind"]
-    date = f"{now:%A}, {ordinal(now.day)} {now:%B %Y}"
-    if kind == "love":
-        return (f"\U0001F496 <b>THOUGHT OF THE DAY</b>\n\U0001F4C5 {date}\n"
-                f"<blockquote>\U0001F319 <b>English</b>\n{e(d['english'])}</blockquote>\n"
-                f"<blockquote>\U0001F338 <b>Hinglish</b>\n{e(d['hinglish'])}</blockquote>\n"
-                f"\u2728 <b>{e(d['closing'])}</b>\n\n"
-                f"\U0001F495 Follow \U0001F449 {handle}\n\U0001F4E4 Share with someone special\n"
-                f"<blockquote>{e(tags)}</blockquote>")
-    if kind == "motivation":
-        return (f"\U0001F525 <b>MOTIVATION OF THE DAY</b>\n\U0001F4C5 {date}\n"
-                f"<blockquote>\U0001F4AA <b>English</b>\n\u201c{q(d['english'])}\u201d</blockquote>\n"
-                f"<blockquote>\U0001F31F <b>Hinglish</b>\n\u201c{q(d['hinglish'])}\u201d</blockquote>\n"
-                f"\u23F3 <b>{e(d['closing'])}</b>\n\n"
-                f"\U0001F680 Follow \U0001F449 {handle}\n\U0001F4E4 Share with a friend who needs this\n"
-                f"<blockquote>{e(tags)}</blockquote>")
-    return (f"\U0001F50D <b>UNBELIEVABLE FACT OF THE DAY</b>\n\U0001F4C5 {ordinal(now.day)} {now:%B %Y}\n"
-            f"<blockquote>\U0001F30D <b>English</b>\n{e(d['english'])}</blockquote>\n"
-            f"<blockquote>\U0001F1EE\U0001F1F3 <b>Hinglish</b>\n{e(d['hinglish'])}</blockquote>\n"
-            f"\U0001F92F <b>{e(d['closing'])}</b>\n\n"
-            f"\U0001F4CC Follow \U0001F449 {handle}\n\U0001F4E4 Share with a friend\n"
-            f"<blockquote>{e(tags)}</blockquote>")
+    label, qstyle = KIND_CAP[kind]
+    clean = lambda s: str(s).strip().strip('"\u201c\u201d')
+    esc = lambda t: html.escape(t, quote=False)   # ' ko &#x27; nahi banana
+    B = lambda raw, style="sans": "<b>" + esc(fancy(raw, style)) + "</b>"   # stylish + bold
+    tags = " ".join(t if t.startswith("#") else "#" + t for t in d["hashtags"][:3])
+    if kind == "fact":
+        date = f"{ordinal(now.day)} {now:%B %Y}"
+    else:
+        date = f"{now:%A}, {ordinal(now.day)} {now:%B %Y}"
+    en, hi = clean(d["english"]), clean(d["hinglish"])
+    if kind != "fact":
+        en, hi = "\u201c" + en + "\u201d", "\u201c" + hi + "\u201d"
+    return (
+        f"\u25C6 {B(label)} \u25C6\n"
+        f"\u25B8 {B(date)}\n"
+        f"<blockquote>\u275D {B('ENGLISH')}\n{B(en, qstyle)}</blockquote>\n"
+        f"<blockquote>\u275D {B('HINGLISH')}\n{B(hi, qstyle)}</blockquote>\n"
+        f"\u27A4 {B(clean(d['closing']), 'script')}\n\n"
+        f"<b>{RULE}</b>\n"
+        f"\u2726 {B('FOLLOW')} \u279C <b>@{esc(name)}</b>\n"
+        f"\u2726 {B('SHARE WITH SOMEONE WHO NEEDS THIS')}\n"
+        f"<blockquote><b>{esc(tags)}</b></blockquote>"
+    )
 
 
 # ----------------------------------------------------------------------
@@ -450,8 +478,13 @@ def tg(method, **kw):
     return r.json()
 
 
+def visible_len(cap):
+    plain = html.unescape(re.sub(r"<[^>]+>", "", cap))
+    return len(plain.encode("utf-16-le")) // 2   # Telegram UTF-16 mein ginta hai
+
+
 def send_post(chat_id, img_bytes, caption):
-    if len(caption) <= 1024:
+    if visible_len(caption) <= 1024:
         tg("sendPhoto", data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
            files={"photo": ("post.jpg", img_bytes)})
     else:  # caption bahut lamba ho to alag bhejo
