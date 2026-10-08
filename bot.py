@@ -24,6 +24,15 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 TZ = ZoneInfo(os.getenv("TIMEZONE", "Asia/Kolkata"))
 DATA_DIR = os.getenv("DATA_DIR", ".")
+# folder na ho (Volume attach nahi hua) ya likh na sakein to current folder use karo
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    _t = os.path.join(DATA_DIR, ".w")
+    open(_t, "w").close()
+    os.remove(_t)
+except Exception:
+    logging.warning("DATA_DIR '%s' use nahi ho sakta, '.' use kar raha hu (Volume attach karo)", DATA_DIR)
+    DATA_DIR = "."
 ADMIN_IDS = {int(x) for x in re.findall(r"-?\d+", os.getenv("ADMIN_IDS", ""))}
 LOCK = threading.RLock()
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
