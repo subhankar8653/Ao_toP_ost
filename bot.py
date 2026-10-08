@@ -126,8 +126,8 @@ def save_state(st):
 # Content (Gemini)
 # ----------------------------------------------------------------------
 KIND_RULES = {
-    "love": "english = 1-2 emotional lines (max 30 words). hinglish = same meaning in natural Roman-script "
-            "Hinglish (Hindi in English letters), max 30 words. closing = 3 short words style like 'Let go. Learn. Grow.'",
+    "love": "english = 1-2 emotional lines (max 24 words). hinglish = same meaning in natural Roman-script "
+            "Hinglish (Hindi in English letters), max 24 words. closing = 3 short words style like 'Let go. Learn. Grow.'",
     "motivation": "english = ONE powerful quote line (max 22 words). hinglish = natural Roman-script Hinglish "
                   "version (Hindi in English letters). closing = short punchy line like 'Stay focused. Stay unstoppable.'",
     "fact": "english = starts with 'Did you know?' then 2-3 short lines with the fact and a punchline. "
@@ -177,42 +177,59 @@ Rules:
 - Must be completely different from these recent posts:
 {avoid}
 - {KIND_RULES[cfg['kind']]}
-- headline = very short English title for image (max 8 words, no emojis).
+- Tone: modern, relatable, Gen-Z friendly, short punchy lines. Hinglish should sound like casual texting, simple words.
+- headline = very short English hook (max 8 words, no emojis). For facts it is the big text on the image, make it a punchy hook.
+- highlight = 1-3 consecutive words copied EXACTLY from the image text (the headline for facts, the english field otherwise) that carry the key idea; they will be shown in colour.
 - hashtags = array of exactly 3 hashtags, first one is #{name}.
 - image_prompt = English, one vivid scene matching the post, style: {cfg['image_style']}. Never include any text/letters in the image.
-Return ONLY JSON with keys: headline, english, hinglish, closing, image_prompt, hashtags."""
+Return ONLY JSON with keys: headline, english, hinglish, closing, highlight, image_prompt, hashtags."""
     return gemini_json(prompt)
 
 
 # ----------------------------------------------------------------------
-# Image
+# Image  (square 1080x1080, bade stylish fonts, highlight words)
 # ----------------------------------------------------------------------
-W, H = 1080, 1350  # 4:5 portrait, Telegram mein premium dikhta hai
-_BASE = "https://github.com/google/fonts/raw/main/ofl/poppins/"
-FONT_URLS = {
-    "bold": _BASE + "Poppins-Bold.ttf",
-    "italic": _BASE + "Poppins-MediumItalic.ttf",
-    "medium": _BASE + "Poppins-Medium.ttf",
+W = H = 1080
+_BASES = ["https://github.com/google/fonts/raw/main/ofl/", "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/"]
+FONT_PATHS = {
+    "bold": "poppins/Poppins-Bold.ttf",
+    "medium": "poppins/Poppins-Medium.ttf",
+    "anton": "anton/Anton-Regular.ttf",               # motivation: bold condensed
+    "serif_italic": "dmserifdisplay/DMSerifDisplay-Italic.ttf",   # love: elegant
+    "archivo": "archivoblack/ArchivoBlack-Regular.ttf",           # facts: heavy modern
+    "script": "greatvibes/GreatVibes-Regular.ttf",    # signature handle
+    "bebas": "bebasneue/BebasNeue-Regular.ttf",
 }
 _font_cache = {}
+_font_failed = {}
 LABELS = {"love": "THOUGHT OF THE DAY", "motivation": "MOTIVATION OF THE DAY", "fact": "DID YOU KNOW?"}
 FOLLOW = {"love": "FOLLOW FOR DAILY LOVE LINES", "motivation": "FOLLOW FOR DAILY MOTIVATION",
           "fact": "FOLLOW FOR DAILY FACTS"}
+# kind -> (main font, start size, line-height, uppercase, handle font, handle size)
+STYLE = {
+    "love": ("serif_italic", 98, 1.28, False, "script", 76),
+    "motivation": ("anton", 150, 1.12, True, "bebas", 64),
+    "fact": ("archivo", 104, 1.2, True, "bebas", 64),
+}
 
 
 def get_font(size, style="bold"):
     key = (size, style)
     if key in _font_cache:
         return _font_cache[key]
-    path = os.path.join(DATA_DIR, f"font_{style}.ttf")
-    if not os.path.exists(path):
-        try:
-            r = requests.get(FONT_URLS[style], timeout=30)
-            r.raise_for_status()
-            with open(path, "wb") as f:
-                f.write(r.content)
-        except Exception as e:
-            log.warning("font download fail (%s): %s", style, e)
+    path = os.path.join(DATA_DIR, "font_" + style + ".ttf")
+    if not os.path.exists(path) and time.time() - _font_failed.get(style, 0) > 3600:
+        for base in _BASES:
+            try:
+                r = requests.get(base + FONT_PATHS[style], timeout=30)
+                r.raise_for_status()
+                with open(path, "wb") as f:
+                    f.write(r.content)
+                break
+            except Exception as e:
+                log.warning("font download fail (%s): %s", style, e)
+        else:
+            _font_failed[style] = time.time()
     try:
         font = ImageFont.truetype(path, size)
     except Exception:
@@ -231,10 +248,10 @@ def ai_background(prompt):
         try:
             url = f"https://image.pollinations.ai/prompt/{quote(prompt)}"
             # thoda lamba mangwate hain taaki neeche ka watermark crop ho jaye
-            r = requests.get(url, params={"width": W, "height": 1480, "nologo": "true",
+            r = requests.get(url, params={"width": W, "height": 1180, "nologo": "true",
                                           "seed": random.randint(1, 10**6)}, timeout=120)
             r.raise_for_status()
-            img = Image.open(io.BytesIO(r.content)).convert("RGB").resize((W, 1480))
+            img = Image.open(io.BytesIO(r.content)).convert("RGB").resize((W, 1180))
             return img.crop((0, 0, W, H))
         except Exception as e:
             log.warning("image try %s fail: %s", i + 1, e)
@@ -245,7 +262,7 @@ def ai_background(prompt):
 def gradient_bg(accent):
     img = Image.new("RGB", (W, H))
     d = ImageDraw.Draw(img)
-    top = tuple(int(c * 0.45) for c in accent)
+    top = tuple(int(c * 0.5) for c in accent)
     bottom = (8, 8, 22)
     for y in range(H):
         t = y / H
@@ -253,15 +270,34 @@ def gradient_bg(accent):
     return img
 
 
-def wrap(draw, text, font, max_w):
-    lines, cur = [], ""
-    for w in text.split():
-        test = (cur + " " + w).strip()
-        if draw.textlength(test, font=font) <= max_w:
-            cur = test
+def _norm(w):
+    return re.sub(r"[^\w]", "", w).lower()
+
+
+def tag_words(text, highlight):
+    """text ke words + kaunse highlight honge (accent colour)"""
+    words = text.split()
+    flags = [False] * len(words)
+    hl = [_norm(w) for w in (highlight or "").split() if _norm(w)]
+    if hl:
+        nw = [_norm(w) for w in words]
+        for i in range(len(nw) - len(hl) + 1):
+            if nw[i:i + len(hl)] == hl:
+                for j in range(i, i + len(hl)):
+                    flags[j] = True
+                break
+    return list(zip(words, flags))
+
+
+def layout_lines(draw, tagged, font, max_w):
+    lines, cur = [], []
+    for item in tagged:
+        test = " ".join(w for w, _ in cur + [item])
+        if not cur or draw.textlength(test, font=font) <= max_w:
+            cur.append(item)
         else:
             lines.append(cur)
-            cur = w
+            cur = [item]
     if cur:
         lines.append(cur)
     return lines
@@ -282,102 +318,96 @@ def make_image(cfg, data, name):
     from PIL import ImageFilter
     acc = cfg["accent"]
     kind = cfg["kind"]
+    main_style, start_fs, lh_mul, upper, h_style, h_size = STYLE[kind]
+
     bg = ai_background(data["image_prompt"]) or gradient_bg(acc)
     base = bg.convert("RGBA")
-    base = Image.alpha_composite(base, Image.new("RGBA", (W, H), (5, 5, 15, 105)))
-
-    # upar-neeche gehra vignette
+    base = Image.alpha_composite(base, Image.new("RGBA", (W, H), (4, 4, 14, 125)))
     vig = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     vd = ImageDraw.Draw(vig)
     for y in range(H):
-        vd.line([(0, y), (W, y)], fill=(0, 0, 0, int(160 * (abs(y - H / 2) / (H / 2)) ** 2.2)))
+        vd.line([(0, y), (W, y)], fill=(0, 0, 0, int(150 * (abs(y - H / 2) / (H / 2)) ** 2.4)))
     base = Image.alpha_composite(base, vig)
-
-    # accent rang ka halka glow
     glow = Image.new("RGBA", (W, H), acc + (0,))
-    ImageDraw.Draw(glow).ellipse([W / 2 - 400, H / 2 - 400, W / 2 + 400, H / 2 + 400], fill=acc + (70,))
-    base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(150)))
+    ImageDraw.Draw(glow).ellipse([W / 2 - 360, H / 2 - 360, W / 2 + 360, H / 2 + 360], fill=acc + (60,))
+    base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(140)))
 
-    # text chuno aur size fit karo
+    # --- main text fit ---
     text = (data["headline"] if kind == "fact" else data["english"]).strip().strip('"\u201c\u201d')
-    style = "italic" if kind == "love" else "bold"
+    if upper:
+        text = text.upper()
+    tagged = tag_words(text, data.get("highlight", ""))
     probe = ImageDraw.Draw(base)
-    max_w = W - 300
-    fs = 72
+    max_w = W - 170
+    glyph_h = 0 if kind == "fact" else 105
+    max_text_h = 560 - glyph_h // 2
+    fs = start_fs
     while True:
-        f = get_font(fs, style)
-        lines = wrap(probe, text, f, max_w)
-        lh = int(fs * 1.38)
-        if (len(lines) <= 7 and len(lines) * lh <= 540) or fs <= 34:
+        f = get_font(fs, main_style)
+        lines = layout_lines(probe, tagged, f, max_w)
+        lh = int(fs * lh_mul)
+        if (len(lines) * lh <= max_text_h and len(lines) <= 9) or fs <= 36:
             break
         fs -= 4
     text_h = len(lines) * lh
-    pad_top = 125 if kind != "fact" else 85
-    pad_bot = 75
-    ph = text_h + pad_top + pad_bot
-    px0, px1 = 90, W - 90
-    py0 = (H - ph) // 2 - 10
-    py1 = py0 + ph
-
-    # glass (blur) panel
-    region = base.crop((px0, py0, px1, py1)).filter(ImageFilter.GaussianBlur(20))
-    region = Image.alpha_composite(region, Image.new("RGBA", region.size, (8, 8, 20, 150)))
-    mask = Image.new("L", region.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, region.size[0] - 1, region.size[1] - 1], radius=38, fill=255)
-    base.paste(region, (px0, py0), mask)
+    block_h = glyph_h + text_h + 50
+    y = 215 + (650 - block_h) // 2
 
     d = ImageDraw.Draw(base, "RGBA")
-    d.rounded_rectangle([px0, py0, px1, py1], radius=38, outline=acc + (170,), width=2)
-    d.rounded_rectangle([34, 34, W - 34, H - 34], radius=30, outline=acc + (110,), width=2)
+    d.rounded_rectangle([26, 26, W - 26, H - 26], radius=26, outline=(255, 255, 255, 55), width=2)
 
-    # bada quote mark (fact ke liye nahi)
-    if kind != "fact":
-        d.text((px0 + 48, py0 + 6), "\u201c", font=get_font(190, "bold"), fill=acc + (235,))
-
-    # main text, beech mein
-    y = py0 + pad_top
-    for ln in lines:
-        w = d.textlength(ln, font=f)
-        x = (W - w) / 2
-        d.text((x + 2, y + 3), ln, font=f, fill=(0, 0, 0, 140))
-        d.text((x, y), ln, font=f, fill=(255, 255, 255, 255))
-        y += lh
-
-    # divider with diamond
-    dy = py1 + 62
-    d.line([(W / 2 - 150, dy), (W / 2 - 20, dy)], fill=acc + (255,), width=3)
-    d.line([(W / 2 + 20, dy), (W / 2 + 150, dy)], fill=acc + (255,), width=3)
-    d.polygon([(W / 2, dy - 9), (W / 2 + 9, dy), (W / 2, dy + 9), (W / 2 - 9, dy)], fill=acc + (255,))
-
-    # upar label pill
-    lf = get_font(27, "medium")
+    # label with side lines
+    lf = get_font(26, "medium")
     label = LABELS[kind]
     tw = spaced_width(d, label, lf, 6)
-    d.rounded_rectangle([W / 2 - tw / 2 - 38, 105, W / 2 + tw / 2 + 38, 167], radius=31,
-                        fill=(0, 0, 0, 110), outline=acc + (230,), width=2)
-    spaced_text(d, W / 2, 121, label, lf, (255, 255, 255, 255), 6)
+    spaced_text(d, W / 2, 62, label, lf, (255, 255, 255, 235), 6)
+    d.line([(W / 2 - tw / 2 - 120, 78), (W / 2 - tw / 2 - 28, 78)], fill=acc + (255,), width=3)
+    d.line([(W / 2 + tw / 2 + 28, 78), (W / 2 + tw / 2 + 120, 78)], fill=acc + (255,), width=3)
 
-    # neeche brand
-    hf = get_font(46, "bold")
+    # big quote mark
+    if kind != "fact":
+        gf = get_font(210, main_style)
+        gw = d.textlength("\u201c", font=gf)
+        d.text(((W - gw) / 2, y - 55), "\u201c", font=gf, fill=acc + (255,))
+        y += glyph_h
+
+    # text lines (word by word, highlight accent rang mein)
+    space = d.textlength(" ", font=f)
+    for line in lines:
+        widths = [d.textlength(w, font=f) for w, _ in line]
+        total = sum(widths) + space * (len(line) - 1)
+        x = (W - total) / 2
+        for (w, hl), ww in zip(line, widths):
+            d.text((x + 3, y + 4), w, font=f, fill=(0, 0, 0, 170))
+            d.text((x, y), w, font=f, fill=(acc + (255,)) if hl else (255, 255, 255, 255))
+            x += ww + space
+        y += lh
+
+    # accent bar
+    d.rounded_rectangle([W / 2 - 55, y + 16, W / 2 + 55, y + 22], radius=3, fill=acc + (255,))
+
+    # handle + follow
+    hf = get_font(h_size, h_style)
     tag = "@" + name
-    hw = d.textlength(tag, font=hf)
-    d.text(((W - hw) / 2 + 2, H - 215 + 3), tag, font=hf, fill=(0, 0, 0, 140))
-    d.text(((W - hw) / 2, H - 215), tag, font=hf, fill=(255, 255, 255, 255))
-    spaced_text(d, W / 2, H - 140, FOLLOW[kind], get_font(22, "medium"), acc + (255,), 4)
+    if h_style == "bebas":
+        spaced_text(d, W / 2 + 2, H - 168 + 3, tag, hf, (0, 0, 0, 170), 5)
+        spaced_text(d, W / 2, H - 168, tag, hf, (255, 255, 255, 255), 5)
+    else:
+        hw = d.textlength(tag, font=hf)
+        d.text(((W - hw) / 2 + 2, H - 180 + 3), tag, font=hf, fill=(0, 0, 0, 170))
+        d.text(((W - hw) / 2, H - 180), tag, font=hf, fill=(255, 255, 255, 255))
+    spaced_text(d, W / 2, H - 78, FOLLOW[kind], get_font(20, "medium"), acc + (255,), 5)
 
     out = io.BytesIO()
-    base.convert("RGB").save(out, "JPEG", quality=92)
+    base.convert("RGB").save(out, "JPEG", quality=93)
     return out.getvalue()
 
 
 # ----------------------------------------------------------------------
-# Caption
+# Caption (chhota aur saaf)
 # ----------------------------------------------------------------------
 def ordinal(n):
     return f"{n}{'th' if 11 <= n % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
-
-
-DIV = "\u2501" * 14
 
 
 def build_caption(name, cfg, d):
@@ -389,24 +419,24 @@ def build_caption(name, cfg, d):
     kind = cfg["kind"]
     date = f"{now:%A}, {ordinal(now.day)} {now:%B %Y}"
     if kind == "love":
-        return (f"\U0001F496 <b>THOUGHT OF THE DAY</b>\n\U0001F4C5 {date}\n{DIV}\n\n"
-                f"<blockquote>\U0001F319 <b>English</b>\n{e(d['english'])}</blockquote>\n\n"
-                f"<blockquote>\U0001F338 <b>Hinglish</b>\n{e(d['hinglish'])}</blockquote>\n\n"
-                f"\u2728 <b>{e(d['closing'])}</b>\n\n{DIV}\n"
-                f"\U0001F495 Follow \U0001F449 {handle}\n\U0001F4E4 Share with someone special\n\n"
+        return (f"\U0001F496 <b>THOUGHT OF THE DAY</b>\n\U0001F4C5 {date}\n"
+                f"<blockquote>\U0001F319 <b>English</b>\n{e(d['english'])}</blockquote>\n"
+                f"<blockquote>\U0001F338 <b>Hinglish</b>\n{e(d['hinglish'])}</blockquote>\n"
+                f"\u2728 <b>{e(d['closing'])}</b>\n\n"
+                f"\U0001F495 Follow \U0001F449 {handle}\n\U0001F4E4 Share with someone special\n"
                 f"<blockquote>{e(tags)}</blockquote>")
     if kind == "motivation":
-        return (f"\U0001F525 <b>MOTIVATION OF THE DAY</b>\n\U0001F4C5 {date}\n{DIV}\n\n"
-                f"<blockquote>\U0001F4AA <b>English</b>\n\u201c{q(d['english'])}\u201d</blockquote>\n\n"
-                f"<blockquote>\U0001F31F <b>Hinglish</b>\n\u201c{q(d['hinglish'])}\u201d</blockquote>\n\n"
-                f"\u23F3 <b>{e(d['closing'])}</b>\n\n{DIV}\n"
-                f"\U0001F680 Follow \U0001F449 {handle}\n\U0001F4E4 Share with a friend who needs this today\n\n"
+        return (f"\U0001F525 <b>MOTIVATION OF THE DAY</b>\n\U0001F4C5 {date}\n"
+                f"<blockquote>\U0001F4AA <b>English</b>\n\u201c{q(d['english'])}\u201d</blockquote>\n"
+                f"<blockquote>\U0001F31F <b>Hinglish</b>\n\u201c{q(d['hinglish'])}\u201d</blockquote>\n"
+                f"\u23F3 <b>{e(d['closing'])}</b>\n\n"
+                f"\U0001F680 Follow \U0001F449 {handle}\n\U0001F4E4 Share with a friend who needs this\n"
                 f"<blockquote>{e(tags)}</blockquote>")
-    return (f"\U0001F50D <b>UNBELIEVABLE FACT OF THE DAY</b>\n\U0001F4C5 {ordinal(now.day)} {now:%B %Y}\n{DIV}\n\n"
-            f"\U0001F30D <b>English</b>\n<blockquote>{e(d['english'])}</blockquote>\n\n"
-            f"\U0001F1EE\U0001F1F3 <b>Hinglish</b>\n<blockquote>{e(d['hinglish'])}</blockquote>\n\n"
-            f"\U0001F92F <b>{e(d['closing'])}</b>\n\n{DIV}\n"
-            f"\U0001F4CC Follow \U0001F449 {handle}\n\U0001F4E4 Share with a friend\n\n"
+    return (f"\U0001F50D <b>UNBELIEVABLE FACT OF THE DAY</b>\n\U0001F4C5 {ordinal(now.day)} {now:%B %Y}\n"
+            f"<blockquote>\U0001F30D <b>English</b>\n{e(d['english'])}</blockquote>\n"
+            f"<blockquote>\U0001F1EE\U0001F1F3 <b>Hinglish</b>\n{e(d['hinglish'])}</blockquote>\n"
+            f"\U0001F92F <b>{e(d['closing'])}</b>\n\n"
+            f"\U0001F4CC Follow \U0001F449 {handle}\n\U0001F4E4 Share with a friend\n"
             f"<blockquote>{e(tags)}</blockquote>")
 
 
