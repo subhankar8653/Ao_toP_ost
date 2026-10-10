@@ -36,6 +36,10 @@ except Exception:
 ADMIN_IDS = {int(x) for x in re.findall(r"-?\d+", os.getenv("ADMIN_IDS", ""))}
 LOCK = threading.RLock()
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
+# MongoDB (optional par recommended): MONGO_URI set ho to channels/times/history yahin save hote hain, redeploy par nahi udte
+MONGO_URI = os.getenv("MONGO_URI", "").strip()
+MONGO_DB = os.getenv("MONGO_DB", "autoposter")
+_mongo_col = None
 FONT_FILE = os.path.join(DATA_DIR, "font.ttf")
 FONT_URL = "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf"
 
@@ -150,7 +154,7 @@ Return ONLY JSON with keys: headline, highlight, name, tagline_en, tagline_hi, p
         "img_label": "RECIPE OF THE DAY", "follow": "FOLLOW FOR DAILY RECIPES",
         "font": ("archivo", 104, 1.2, True, "bebas", 64),
         "big_headline": True, "quote_marks": False, "overlay": False, "caption": "cook",
-        "rules": "English only. If the theme starts with 'recipe' write a full easy recipe (post_type = recipe), if it starts "
+        "rules": "English + Hinglish. If the theme starts with 'recipe' write a full easy recipe (post_type = recipe), if it starts "
                  "with 'hack' write one genuinely useful kitchen hack (post_type = hack). Indian-home friendly, realistic "
                  "quantities, accurate and SAFE cooking advice only.",
         "schema": """- Tone: friendly, simple, short lines.
@@ -159,12 +163,14 @@ Return ONLY JSON with keys: headline, highlight, name, tagline_en, tagline_hi, p
 - emoji = one fitting food/kitchen emoji.
 - intro = one tasty line (max 16 words).
 - ingredients = array of at most 8 short strings with quantity, e.g. Paneer cubes (200g). For a hack: what you need (may be empty).
-- steps = array of 3-6 short steps (each max 18 words, no numbering).
+- steps = array of 3-6 short steps (each max 16 words, no numbering).
 - tip = one short pro tip (max 18 words).
+- headline_hi, intro_hi, ingredients_hi, steps_hi, tip_hi = the SAME content in casual Roman-script Hinglish (Hindi in English letters): same number of items, same order, same quantities.
 - hashtags = array of exactly 3 food hashtags.
 - image_prompt = English, the finished dish (or the hack's main item), style: {image_style}. Never include any text/letters in the image.
-Return ONLY JSON with keys: post_type, headline, emoji, intro, ingredients, steps, tip, hashtags, image_prompt.""",
-        "required": ("post_type", "headline", "intro", "ingredients", "steps", "hashtags", "image_prompt"),
+Return ONLY JSON with keys: post_type, headline, headline_hi, emoji, intro, intro_hi, ingredients, ingredients_hi, steps, steps_hi, tip, tip_hi, hashtags, image_prompt.""",
+        "required": ("post_type", "headline", "intro", "intro_hi", "ingredients", "ingredients_hi", "steps", "steps_hi",
+                    "hashtags", "image_prompt"),
         "times": ["12:30", "19:30"],
         "accent": (255, 140, 60),
         "about": "Easy tasty recipes and smart kitchen hacks for home cooks.",
@@ -183,12 +189,13 @@ Return ONLY JSON with keys: post_type, headline, emoji, intro, ingredients, step
         "font": ("archivo", 104, 1.2, True, "bebas", 64),
         "big_headline": True, "quote_marks": False, "overlay": False, "caption": "timeline",
         "source": "onthisday",
-        "rules": "Pick exactly 3 interesting events that happened on TODAY's date (same day and month, any year). Years must "
+        "min_events": 10,
+        "rules": "Pick 10 to 12 interesting events that happened on TODAY's date (same day and month, any year). Years must "
                  "be exact and facts 100% true. Mix different fields. Tragic events: one respectful line, no graphic detail. "
                  "The theme is only a soft hint.",
         "schema": """- Tone: clear and engaging. Hinglish = casual Roman-script Hindi, easy words.
 - headline = short English hook for the date (max 8 words, no emojis).
-- events = array of exactly 3 objects, each with keys year (number), en (one line, max 22 words), hi (same in Roman Hinglish, max 22 words), emoji (one fitting emoji). Oldest year first.
+- events = array of 10 to 12 objects (NEVER fewer than 10), each with keys year (number), en (ONE short line, max 12 words), hi (same in Roman Hinglish, max 12 words), emoji (one fitting emoji). Oldest year first. Keep every line SHORT.
 - hashtags = array of exactly 5 hashtags: #HistoryFacts #TodayInHistory, the date like #25July, plus 2 topic hashtags.
 - image_prompt = English, one iconic scene of the most visual event, style: {image_style}. No close-up faces, never include any text/letters in the image.
 Return ONLY JSON with keys: headline, events, hashtags, image_prompt.""",
@@ -224,12 +231,46 @@ def full_cfg(entry):
 # ----------------------------------------------------------------------
 # State (history + done slots)
 # ----------------------------------------------------------------------
-def load_state():
+def mongo_col():
+    global _mongo_col
+    if _mongo_col is None:
+        from pymongo import MongoClient
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
+        client.admin.command("ping")
+        _mongo_col = client[MONGO_DB]["state"]
+    return _mongo_col
+
+
+def _read_file_state():
     try:
         with open(STATE_FILE) as f:
-            st = json.load(f)
+            return json.load(f)
     except Exception:
-        st = {}
+        return None
+
+
+def load_state():
+    if MONGO_URI:
+        st = None
+        for i in range(5):
+            try:
+                st = mongo_col().find_one({"_id": "main"})
+                break
+            except Exception as e:
+                log.error("MongoDB connect try %s fail: %s", i + 1, e)
+                time.sleep(5)
+        else:
+            # khali state se shuru karte to purana data overwrite ho jata, isliye ruk jao
+            raise RuntimeError("MongoDB se connect nahi ho paya. MONGO_URI check karo.")
+        if st:
+            st.pop("_id", None)
+        else:
+            st = _read_file_state()      # pehli baar: purani state.json ho to wahi import ho jati hai
+            log.info("MongoDB khali hai%s", " - state.json se data import kiya" if st else "")
+    else:
+        st = _read_file_state()
+        log.warning("MONGO_URI set nahi hai: data file mein ja raha hai, redeploy par ud sakta hai!")
+    st = st or {}
     st.setdefault("done", [])
     st.setdefault("history", {})
     if "seeded" not in st:   # purani state mein pehle wale 3 pehle hi seed maane jaate hain
@@ -247,6 +288,12 @@ def save_state(st):
         st["done"] = st["done"][-200:]
         for k in st["history"]:
             st["history"][k] = st["history"][k][-60:]
+        if MONGO_URI:
+            try:
+                mongo_col().replace_one({"_id": "main"}, {**st, "_id": "main"}, upsert=True)
+                return
+            except Exception as e:
+                log.error("MongoDB save fail (file mein backup ja raha hai): %s", e)
         tmp = STATE_FILE + ".tmp"
         with open(tmp, "w") as f:
             json.dump(st, f)
@@ -273,7 +320,7 @@ def onthisday_events(now):
         r.raise_for_status()
         ev = [e for e in r.json().get("events", []) if e.get("text") and e.get("year") and len(e["text"]) < 230]
         random.shuffle(ev)
-        ev = sorted(ev[:40], key=lambda e: e["year"])
+        ev = sorted(ev[:60], key=lambda e: e["year"])
         if not ev:
             return ""
         lines = "\n".join(f"{e['year']}: {e['text']}" for e in ev)
@@ -286,7 +333,7 @@ def onthisday_events(now):
 SOURCES = {"onthisday": onthisday_events}
 
 
-def gemini_json(prompt, required=DEFAULT_REQUIRED, tries=3):
+def gemini_json(prompt, required=DEFAULT_REQUIRED, min_events=0, tries=3):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -305,12 +352,12 @@ def gemini_json(prompt, required=DEFAULT_REQUIRED, tries=3):
             for k in required:
                 if k not in data:
                     raise ValueError(f"missing {k}")
-            for k in ("hashtags", "ingredients", "steps"):
+            for k in ("hashtags", "ingredients", "steps", "ingredients_hi", "steps_hi"):
                 if k in data and not isinstance(data[k], list):
                     raise ValueError(f"{k} list nahi hai")
             if "events" in required:
                 ev = data["events"]
-                if not isinstance(ev, list) or not ev or not all(
+                if not isinstance(ev, list) or len(ev) < max(1, min_events) or not all(
                         isinstance(e, dict) and all(x in e for x in ("year", "en", "hi")) for e in ev):
                     raise ValueError("events galat format")
             return data
@@ -340,7 +387,7 @@ Rules:
 {avoid}
 - {cfg['rules']}
 {schema}"""
-    return gemini_json(prompt, cfg.get("required", DEFAULT_REQUIRED))
+    return gemini_json(prompt, cfg.get("required", DEFAULT_REQUIRED), cfg.get("min_events", 0))
 
 
 # ----------------------------------------------------------------------
@@ -654,23 +701,34 @@ def caption_cook(name, cfg, d, short=False):
     is_hack = str(d.get("post_type", "")).lower().startswith("h")
     label = "Kitchen Hack of the Day" if is_hack else "Recipe of the Day"
     emoji = d.get("emoji") or ("\U0001F4A1" if is_hack else "\U0001F958")
-    ings = [x for x in (d.get("ingredients") or []) if str(x).strip()]
-    steps = [x for x in (d.get("steps") or []) if str(x).strip()]
-    need = "What you need" if is_hack else "Ingredients"
-    how = "How to do it" if is_hack else "Quick Recipe"
-    parts = [f"{_esc(emoji)} <b>{_esc(_clean(d['headline']))}</b>"]
-    if not short:
-        parts.append(_esc(d["intro"]))
-    if ings:
-        parts += ["", f"\U0001F4DD <b>{need}:</b>"] + [f"\u2022 {_esc(i)}" for i in ings]
-    if steps:
-        parts += ["", f"\U0001F525 <b>{how}:</b>"] + [f"{k}. {_esc(s)}" for k, s in enumerate(steps, 1)]
-    if d.get("tip") and not short:
-        parts += ["", f"\U0001F4A1 <b>Pro Tip:</b> {_esc(d['tip'])}"]
-    body = "\n".join(parts)
+
+    def block(hi):
+        if hi:
+            need, how, tl = ("Zaroorat ka saaman", "Kaise karein", "Khaas Tip") if is_hack else ("Saamagri", "Banane ka tarika", "Khaas Tip")
+            title = d.get("headline_hi") or d["headline"]
+            intro, tip = d.get("intro_hi") or d.get("intro"), d.get("tip_hi") or d.get("tip")
+            ings, steps = d.get("ingredients_hi") or d.get("ingredients"), d.get("steps_hi") or d.get("steps")
+        else:
+            need, how, tl = ("What you need", "How to do it", "Pro Tip") if is_hack else ("Ingredients", "Quick Recipe", "Pro Tip")
+            title, intro, tip = d["headline"], d.get("intro"), d.get("tip")
+            ings, steps = d.get("ingredients"), d.get("steps")
+        ings = [x for x in (ings or []) if str(x).strip()]
+        steps = [x for x in (steps or []) if str(x).strip()]
+        parts = [f"{_esc(emoji)} <b>{_esc(_clean(title))}</b>"]
+        if intro and not short:
+            parts.append(_esc(intro))
+        if ings:
+            parts += ["", f"\U0001F4DD <b>{need}:</b>"] + [f"\u2022 {_esc(i)}" for i in ings]
+        if steps:
+            parts += ["", f"\U0001F525 <b>{how}:</b>"] + [f"{k}. {_esc(s)}" for k, s in enumerate(steps, 1)]
+        if tip and not short:
+            parts += ["", f"\U0001F4A1 <b>{tl}:</b> {_esc(tip)}"]
+        return "\n".join(parts)
+
     cap = (f"\U0001F37D <b>#{_esc(name)} \u2013 {label}</b>\n"
            f"\U0001F4C5 <b>{date}</b>\n{RULE}\n\n"
-           f"<blockquote>{body}</blockquote>\n\n"
+           f"\U0001F1EC\U0001F1E7 <b>English:</b>\n<blockquote>{block(False)}</blockquote>\n"
+           f"\U0001F1EE\U0001F1F3 <b>Hinglish:</b>\n<blockquote>{block(True)}</blockquote>\n\n"
            f"\U0001F4CC Follow \U0001F449 <b>@{_esc(name)}</b> for daily tasty dishes &amp; easy recipes!\n"
            f"<blockquote>{_esc(_tags(d, 3))}</blockquote>")
     if not short and visible_len(cap) > 4000:      # Telegram limit 4096
@@ -678,23 +736,44 @@ def caption_cook(name, cfg, d, short=False):
     return cap
 
 
-def caption_timeline(name, cfg, d):
-    now = datetime.now(TZ)
+CAPTION_LIMIT = 1024      # Telegram: photo ke saath caption ki limit
+
+
+def _timeline_parts(name, d, now, p):
+    evs = d["events"][:12]
+    size = -(-len(evs) // p)                       # ceil
+    chunks = [evs[i:i + size] for i in range(0, len(evs), size)]
+    n = len(chunks)
     date = f"{now:%A} \u2013 {ordinal(now.day)} {now:%B}"
-    evs = d["events"][:3]
-    en = "\n".join(f"\U0001F537 {_esc(e['year'])} \u2013 {_esc(_clean(e['en']))} {_esc(e.get('emoji', ''))}" for e in evs)
-    hi = "\n".join(f"\U0001F537 {_esc(e['year'])} \u2013 {_esc(_clean(e['hi']))} {_esc(e.get('emoji', ''))}" for e in evs)
     line = "\u25C7" + "\u2501" * 14 + "\u25C7"
-    return (
-        f"{line}\n"
-        f"\U0001F4C5 <b>{date}</b>\n"
-        f"\u3010 <b>Today In History</b> | #{_esc(name)} \u3011\n"
-        f"{line}\n\n"
-        f"\U0001F570 <b>English:</b>\n<blockquote>{en}</blockquote>\n"
-        f"\U0001F5E3 <b>Hinglish:</b>\n<blockquote>{hi}</blockquote>\n"
-        f"\U0001F501 Follow \U0001F449 <b>@{_esc(name)}</b> for daily historical facts &amp; events!\n"
-        f"<blockquote>{_esc(_tags(d, 5))}</blockquote>"
-    )
+    caps = []
+    for i, ch in enumerate(chunks):
+        en = "\n".join(f"\U0001F537 {_esc(e['year'])} \u2013 {_esc(_clean(e['en']))} {_esc(e.get('emoji', ''))}" for e in ch)
+        hi = "\n".join(f"\U0001F537 {_esc(e['year'])} \u2013 {_esc(_clean(e['hi']))} {_esc(e.get('emoji', ''))}" for e in ch)
+        part = f" \u2022 Part {i + 1}/{n}" if n > 1 else ""
+        if i == 0:
+            head = (f"{line}\n\U0001F4C5 <b>{date}</b>\n"
+                    f"\u3010 <b>Today In History</b> | #{_esc(name)} \u3011{part}\n{line}\n\n")
+        else:
+            head = f"\U0001F4C5 <b>{date}</b> | #{_esc(name)}{part}\n\n"
+        foot = ""
+        if i == n - 1:
+            foot = (f"\U0001F501 Follow \U0001F449 <b>@{_esc(name)}</b> for daily historical facts &amp; events!\n"
+                    f"<blockquote>{_esc(_tags(d, 5))}</blockquote>")
+        caps.append(f"{head}\U0001F570 <b>English:</b>\n<blockquote>{en}</blockquote>\n"
+                    f"\U0001F5E3 <b>Hinglish:</b>\n<blockquote>{hi}</blockquote>\n{foot}")
+    return caps
+
+
+def caption_timeline(name, cfg, d):
+    """Saare events ek post mein na aayein to 2 post, phir bhi na aayein to 3 post (list return hoti hai)"""
+    now = datetime.now(TZ)
+    caps = []
+    for p in (1, 2, 3):
+        caps = _timeline_parts(name, d, now, p)
+        if all(visible_len(c) <= CAPTION_LIMIT for c in caps):
+            break
+    return caps
 
 
 CAPTIONS = {"quote": caption_quote, "startup": caption_startup, "cook": caption_cook, "timeline": caption_timeline}
@@ -735,8 +814,22 @@ def publish(name, st, target=None, record=True):
     hist = st["history"].setdefault(name, [])
     data = make_content(name, cfg, hist)
     img = make_image(cfg, data, name)
-    cap = build_caption(name, cfg, data)
-    send_post(target or cfg["chat_id"], img, cap)
+    caps = build_caption(name, cfg, data)
+    if isinstance(caps, str):
+        caps = [caps]
+    dest = target or cfg["chat_id"]
+    for i, cap in enumerate(caps):
+        if i == 0:
+            send_post(dest, img, cap)
+            continue
+        time.sleep(2)
+        for attempt in range(3):   # pehla part ja chuka hai, isliye yahan fail par poori post dobara nahi bhejte
+            try:
+                send_post(dest, img, cap)
+                break
+            except Exception as e:
+                log.error("part %s send try %s fail: %s", i + 1, attempt + 1, e)
+                time.sleep(5)
     if record:
         with LOCK:
             hist.append(data["headline"])
@@ -844,6 +937,8 @@ def sc_main(st):
     rows.append([Btn("➕ Naya Channel Add Karo", "na")])
     text = ("🎛 Channel Manager\n\nKis channel ko manage karna hai? Neeche se chuno 👇" if st["channels"]
             else "🎛 Channel Manager\n\nAbhi koi channel nahi hai. Neeche se add karo 👇")
+    text += "\n\n" + ("\U0001F4BE Data: MongoDB \u2705" if MONGO_URI
+                      else "\U0001F4BE Data: file \u26A0\uFE0F (redeploy par ud sakta hai, MONGO_URI daalo)")
     return text, kb(rows)
 
 
@@ -1182,7 +1277,8 @@ def run():
     save_state(st)
     threading.Thread(target=command_loop, args=(st,), daemon=True).start()
     fails = {}
-    log.info("Bot started. Channels: %s | Admins: %s", ", ".join(st["channels"]), ADMIN_IDS or "NOT SET")
+    log.info("Bot started. Storage: %s | Channels: %s | Admins: %s", "MongoDB" if MONGO_URI else "file",
+             ", ".join(st["channels"]), ADMIN_IDS or "NOT SET")
     while True:
         now = datetime.now(TZ)
         with LOCK:

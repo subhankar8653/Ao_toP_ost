@@ -1,3 +1,4 @@
 requests>=2.31
 Pillow>=10.1
 tzdata
+pymongo[srv]>=4.6
