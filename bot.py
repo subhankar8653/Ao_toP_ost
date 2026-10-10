@@ -4,9 +4,9 @@ Auto Telegram Channel Poster
 - Pollinations (free) se AI image, upar Pillow se stylish text card
 - Roz channel ke hisab se 1-2 post, alag-alag topic
 Run: python bot.py  (Railway worker)
-Telegram commands (sirf ADMIN_IDS ke liye):
-  /add Name chat_id [love|motivation|fact] [09:00,21:00]
-  /remove Name | /list | /test Name [live] | /times Name 09:00,21:00 | /myid | /help
+Control (sirf ADMIN_IDS ke liye): bot ko /start bhejo -> channel ke BUTTONS aate hain.
+  Channel pe tap karo -> time add/remove (12 ghante AM/PM), preview, live post, type badlo, channel hatao.
+  /myid  -> apna user id (ADMIN_IDS ke liye)
 """
 import os, io, re, json, time, random, sys, html, logging, threading
 from datetime import datetime, timedelta
@@ -43,7 +43,27 @@ FONT_URL = "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.tt
 # KINDS (channel ke type) -- naya type chahiye to yahan ek block jodo
 # ----------------------------------------------------------------------
 KINDS = {
+    # ------------------------------------------------------------------
+    # NAYA TYPE JODNA HO? bas yahan ek aur block copy-paste karo. Baaki code ko haath lagane ki zarurat nahi.
+    #   emoji / title    : button mein dikhta hai
+    #   times            : default post time (24hr likho, bot khud AM/PM dikhata hai)
+    #   img_label/follow : image ke upar-neeche ka text
+    #   cap_label        : caption ka heading
+    #   font             : (main font, start size, line-height, UPPERCASE?, handle font, handle size)
+    #   quote_style      : caption ke quote ka Unicode style (sans / script / italic)
+    #   big_headline     : True = image par headline, False = image par english quote + bada quote mark
+    #   quote_marks      : caption mein quote “ ” lagao ya nahi
+    #   show_weekday     : caption date mein din (Monday) dikhao ya nahi
+    #   rules            : Gemini ko content ke rules
+    # ------------------------------------------------------------------
     "love": {
+        "emoji": "\u2764\ufe0f", "title": "Love Quotes",
+        "img_label": "THOUGHT OF THE DAY", "follow": "FOLLOW FOR DAILY LOVE LINES",
+        "cap_label": "THOUGHT OF THE DAY", "quote_style": "italic",
+        "font": ("serif_italic", 98, 1.28, False, "script", 76),
+        "big_headline": False, "quote_marks": True, "show_weekday": True,
+        "rules": "english = 1-2 emotional lines (max 24 words). hinglish = same meaning in natural Roman-script "
+                 "Hinglish (Hindi in English letters), max 24 words. closing = 3 short words style like 'Let go. Learn. Grow.'",
         "times": ["09:00", "22:30"],
         "accent": (255, 105, 140),
         "about": "Soulful love quotes, pyaar, breakup, yaadein, ehsaas, intezaar, "
@@ -56,6 +76,13 @@ KINDS = {
                        "silhouettes, moon, hearts, bokeh, no text",
     },
     "motivation": {
+        "emoji": "\U0001F525", "title": "Motivation",
+        "img_label": "MOTIVATION OF THE DAY", "follow": "FOLLOW FOR DAILY MOTIVATION",
+        "cap_label": "MOTIVATION OF THE DAY", "quote_style": "sans",
+        "font": ("anton", 150, 1.12, True, "bebas", 64),
+        "big_headline": False, "quote_marks": True, "show_weekday": True,
+        "rules": "english = ONE powerful quote line (max 22 words). hinglish = natural Roman-script Hinglish "
+                 "version (Hindi in English letters). closing = short punchy line like 'Stay focused. Stay unstoppable.'",
         "times": ["06:30", "18:00"],
         "accent": (255, 150, 40),
         "about": "Daily motivation: discipline, success mindset, hard work, consistency, "
@@ -68,6 +95,14 @@ KINDS = {
                        "lone figure, dramatic light, no text",
     },
     "fact": {
+        "emoji": "\U0001F9E0", "title": "Facts",
+        "img_label": "DID YOU KNOW?", "follow": "FOLLOW FOR DAILY FACTS",
+        "cap_label": "UNBELIEVABLE FACT OF THE DAY", "quote_style": "sans",
+        "font": ("archivo", 104, 1.2, True, "bebas", 64),
+        "big_headline": True, "quote_marks": False, "show_weekday": False,
+        "rules": "english = starts with 'Did you know?' then 2-3 short lines with the fact and a punchline. "
+                 "hinglish = starts with 'Kya tumhe pata hai?' then same fact in Roman-script Hinglish. "
+                 "Facts MUST be 100% true and well-established. closing = short line like 'Mind blown!'",
         "times": ["13:00", "20:00"],
         "accent": (80, 170, 255),
         "about": "Mind-blowing, TRUE, verifiable facts: space, animals, human body, history, "
@@ -125,17 +160,6 @@ def save_state(st):
 # ----------------------------------------------------------------------
 # Content (Gemini)
 # ----------------------------------------------------------------------
-KIND_RULES = {
-    "love": "english = 1-2 emotional lines (max 24 words). hinglish = same meaning in natural Roman-script "
-            "Hinglish (Hindi in English letters), max 24 words. closing = 3 short words style like 'Let go. Learn. Grow.'",
-    "motivation": "english = ONE powerful quote line (max 22 words). hinglish = natural Roman-script Hinglish "
-                  "version (Hindi in English letters). closing = short punchy line like 'Stay focused. Stay unstoppable.'",
-    "fact": "english = starts with 'Did you know?' then 2-3 short lines with the fact and a punchline. "
-            "hinglish = starts with 'Kya tumhe pata hai?' then same fact in Roman-script Hinglish. "
-            "Facts MUST be 100% true and well-established. closing = short line like 'Mind blown!'",
-}
-
-
 def gemini_json(prompt, tries=3):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
     body = {
@@ -176,7 +200,7 @@ Rules:
 - Content must be ORIGINAL (never copy famous copyrighted quotes word-for-word).
 - Must be completely different from these recent posts:
 {avoid}
-- {KIND_RULES[cfg['kind']]}
+- {cfg['rules']}
 - Tone: modern, relatable, Gen-Z friendly, short punchy lines. Hinglish should sound like casual texting, simple words.
 - headline = very short English hook (max 8 words, no emojis). For facts it is the big text on the image, make it a punchy hook.
 - highlight = 1-3 consecutive words copied EXACTLY from the image text (the headline for facts, the english field otherwise) that carry the key idea; they will be shown in colour.
@@ -202,15 +226,6 @@ FONT_PATHS = {
 }
 _font_cache = {}
 _font_failed = {}
-LABELS = {"love": "THOUGHT OF THE DAY", "motivation": "MOTIVATION OF THE DAY", "fact": "DID YOU KNOW?"}
-FOLLOW = {"love": "FOLLOW FOR DAILY LOVE LINES", "motivation": "FOLLOW FOR DAILY MOTIVATION",
-          "fact": "FOLLOW FOR DAILY FACTS"}
-# kind -> (main font, start size, line-height, uppercase, handle font, handle size)
-STYLE = {
-    "love": ("serif_italic", 98, 1.28, False, "script", 76),
-    "motivation": ("anton", 150, 1.12, True, "bebas", 64),
-    "fact": ("archivo", 104, 1.2, True, "bebas", 64),
-}
 
 
 def get_font(size, style="bold"):
@@ -318,7 +333,7 @@ def make_image(cfg, data, name):
     from PIL import ImageFilter
     acc = cfg["accent"]
     kind = cfg["kind"]
-    main_style, start_fs, lh_mul, upper, h_style, h_size = STYLE[kind]
+    main_style, start_fs, lh_mul, upper, h_style, h_size = cfg["font"]
 
     bg = ai_background(data["image_prompt"]) or gradient_bg(acc)
     base = bg.convert("RGBA")
@@ -333,13 +348,13 @@ def make_image(cfg, data, name):
     base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(140)))
 
     # --- main text fit ---
-    text = (data["headline"] if kind == "fact" else data["english"]).strip().strip('"\u201c\u201d')
+    text = (data["headline"] if cfg["big_headline"] else data["english"]).strip().strip('"\u201c\u201d')
     if upper:
         text = text.upper()
     tagged = tag_words(text, data.get("highlight", ""))
     probe = ImageDraw.Draw(base)
     max_w = W - 170
-    glyph_h = 0 if kind == "fact" else 105
+    glyph_h = 0 if cfg["big_headline"] else 105
     max_text_h = 560 - glyph_h // 2
     fs = start_fs
     while True:
@@ -358,14 +373,14 @@ def make_image(cfg, data, name):
 
     # label with side lines
     lf = get_font(26, "medium")
-    label = LABELS[kind]
+    label = cfg["img_label"]
     tw = spaced_width(d, label, lf, 6)
     spaced_text(d, W / 2, 62, label, lf, (255, 255, 255, 235), 6)
     d.line([(W / 2 - tw / 2 - 120, 78), (W / 2 - tw / 2 - 28, 78)], fill=acc + (255,), width=3)
     d.line([(W / 2 + tw / 2 + 28, 78), (W / 2 + tw / 2 + 120, 78)], fill=acc + (255,), width=3)
 
     # big quote mark
-    if kind != "fact":
+    if cfg["quote_marks"]:
         gf = get_font(210, main_style)
         gw = d.textlength("\u201c", font=gf)
         d.text(((W - gw) / 2, y - 55), "\u201c", font=gf, fill=acc + (255,))
@@ -396,7 +411,7 @@ def make_image(cfg, data, name):
         hw = d.textlength(tag, font=hf)
         d.text(((W - hw) / 2 + 2, H - 180 + 3), tag, font=hf, fill=(0, 0, 0, 170))
         d.text(((W - hw) / 2, H - 180), tag, font=hf, fill=(255, 255, 255, 255))
-    spaced_text(d, W / 2, H - 78, FOLLOW[kind], get_font(20, "medium"), acc + (255,), 5)
+    spaced_text(d, W / 2, H - 78, cfg["follow"], get_font(20, "medium"), acc + (255,), 5)
 
     out = io.BytesIO()
     base.convert("RGB").save(out, "JPEG", quality=93)
@@ -432,28 +447,21 @@ def fancy(text, style="sans"):
 
 
 RULE = "\u2501" * 12
-KIND_CAP = {
-    # label, quote style, quote icon
-    "love": ("THOUGHT OF THE DAY", "italic"),
-    "motivation": ("MOTIVATION OF THE DAY", "sans"),
-    "fact": ("UNBELIEVABLE FACT OF THE DAY", "sans"),
-}
 
 
 def build_caption(name, cfg, d):
     now = datetime.now(TZ)
-    kind = cfg["kind"]
-    label, qstyle = KIND_CAP[kind]
+    label, qstyle = cfg["cap_label"], cfg["quote_style"]
     clean = lambda s: str(s).strip().strip('"\u201c\u201d')
     esc = lambda t: html.escape(t, quote=False)   # ' ko &#x27; nahi banana
     B = lambda raw, style="sans": "<b>" + esc(fancy(raw, style)) + "</b>"   # stylish + bold
     tags = " ".join(t if t.startswith("#") else "#" + t for t in d["hashtags"][:3])
-    if kind == "fact":
-        date = f"{ordinal(now.day)} {now:%B %Y}"
-    else:
+    if cfg["show_weekday"]:
         date = f"{now:%A}, {ordinal(now.day)} {now:%B %Y}"
+    else:
+        date = f"{ordinal(now.day)} {now:%B %Y}"
     en, hi = clean(d["english"]), clean(d["hinglish"])
-    if kind != "fact":
+    if cfg["quote_marks"]:
         en, hi = "\u201c" + en + "\u201d", "\u201c" + hi + "\u201d"
     return (
         f"\u25C6 {B(label)} \u25C6\n"
@@ -507,28 +515,36 @@ def publish(name, st, target=None, record=True):
 
 
 # ----------------------------------------------------------------------
-# Telegram commands (long polling, alag thread)
+# Telegram control panel (buttons, long polling, alag thread)
 # ----------------------------------------------------------------------
-HELP = (
-    "Commands:\n"
-    "/add Name chat_id [type] [times]\n"
-    "   ex: /add TheHeartVerse -1001234567890\n"
-    "   naya channel: /add MyFacts -100123 fact 10:00,19:00\n"
-    "   types: love, motivation, fact\n"
-    "/remove Name\n"
-    "/list\n"
-    "/test Name  -> preview yahin chat mein\n"
-    "/test Name live  -> channel pe asli post\n"
-    "/times Name 09:00,21:00\n"
-    "/myid"
-)
+PENDING = {}        # user id -> {"step": ...}  (jab bot ko user se text / forward chahiye)
+BUSY = set()        # jin channels ki post abhi ban rahi hai
+MAX_TIMES = 8
 
 
-def say(chat, text):
+def say(chat, text, markup=None):
+    show(chat, None, text, markup)
+
+
+def show(chat, mid, text, markup=None):
+    """mid ho to wahi message edit hota hai (buttons ek hi screen mein badalte hain), warna naya message"""
+    data = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
+    if markup:
+        data["reply_markup"] = markup
     try:
-        tg("sendMessage", data={"chat_id": chat, "text": text, "disable_web_page_preview": True})
+        if mid:
+            tg("editMessageText", data={**data, "message_id": mid})
+        else:
+            tg("sendMessage", data=data)
     except Exception as e:
-        log.error("reply fail: %s", e)
+        if "not modified" in str(e):
+            return
+        log.error("show fail: %s", e)
+        if mid:
+            try:
+                tg("sendMessage", data=data)
+            except Exception as e2:
+                log.error("send fail: %s", e2)
 
 
 def find_name(st, raw):
@@ -539,130 +555,372 @@ def find_name(st, raw):
     return None
 
 
-def valid_times(s):
-    ts = [t.strip() for t in s.split(",") if t.strip()]
-    if not ts or not all(re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", t) for t in ts):
+# ---------- 12 ghante ka time (andar 24hr "HH:MM" save hota hai, dikhta hamesha AM/PM) ----------
+def fmt12(t24):
+    h, m = map(int, t24.split(":"))
+    return f"{(h % 12) or 12}:{m:02d} {'AM' if h < 12 else 'PM'}"
+
+
+def to24(h, m, ap):
+    return f"{h % 12 + (12 if ap == 'PM' else 0):02d}:{m:02d}"
+
+
+def parse12(s):
+    """'6pm' '6:30 PM' '6.30 p.m.' -> '18:30'.  24 ghante wala (18:00) ya AM/PM ke bina -> None"""
+    m = re.fullmatch(r"(\d{1,2})(?:[:.](\d{2}))?\s*(a|p)\.?\s*m\.?", s.strip().lower())
+    if not m:
         return None
-    return [f"{int(t.split(':')[0]):02d}:{t.split(':')[1]}" for t in ts]
+    h, mi = int(m.group(1)), int(m.group(2) or 0)
+    if not (1 <= h <= 12 and 0 <= mi <= 59):
+        return None
+    return to24(h, mi, "AM" if m.group(3) == "a" else "PM")
 
 
-def cmd_add(st, chat, args):
-    if len(args) < 2:
-        return say(chat, "Aise likho: /add TheHeartVerse -100xxxxxxxxxx")
-    name, chat_id = args[0].lstrip("@"), args[1]
-    if not re.fullmatch(r"\w{3,}", name):
-        return say(chat, "Channel ka naam sirf letters/numbers/underscore ho.")
-    kind = None
-    times = None
-    for a in args[2:]:
-        if a.lower() in KINDS:
-            kind = a.lower()
-        elif valid_times(a):
-            times = valid_times(a)
-    if kind is None:
-        known = DEFAULTS.get(next((n for n in DEFAULTS if n.lower() == name.lower()), ""))
-        if known:
-            name = next(n for n in DEFAULTS if n.lower() == name.lower())
-            kind = known[0]
-        else:
-            return say(chat, f"'{name}' naya channel hai, type bhi likho:\n"
-                             f"/add {name} {chat_id} love|motivation|fact")
+def add_time(st, n, t24):
+    """-> (ok, message)"""
+    with LOCK:
+        e = st["channels"][n]
+        if t24 in e["times"]:
+            return False, f"{fmt12(t24)} pehle se hai"
+        if len(e["times"]) >= MAX_TIMES:
+            return False, f"Maximum {MAX_TIMES} time hi rakh sakte ho"
+        e["times"] = sorted(e["times"] + [t24])
+        now = datetime.now(TZ)
+        h, m = map(int, t24.split(":"))
+        slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        note = ""
+        if slot <= now < slot + timedelta(minutes=90):
+            # abhi-abhi guzra time add kiya to turant post na chali jaye
+            st["done"].append(f"{n}|{slot:%Y-%m-%d}|{t24}")
+            note = " (aaj ka slot nikal gaya, kal se post hogi)"
+        save_state(st)
+    return True, f"✅ {fmt12(t24)} add ho gaya{note}"
+
+
+# ---------- buttons ----------
+def kb(rows):
+    return json.dumps({"inline_keyboard": rows})
+
+
+def Btn(text, data):
+    return {"text": text, "callback_data": data}
+
+
+def kind_emoji(kind):
+    return KINDS.get(kind, {}).get("emoji", "📢")
+
+
+def sc_main(st):
+    rows = [[Btn(f"{kind_emoji(e['kind'])}  {n}", f"ch:{n}")] for n, e in st["channels"].items()]
+    rows.append([Btn("➕ Naya Channel Add Karo", "na")])
+    text = ("🎛 Channel Manager\n\nKis channel ko manage karna hai? Neeche se chuno 👇" if st["channels"]
+            else "🎛 Channel Manager\n\nAbhi koi channel nahi hai. Neeche se add karo 👇")
+    return text, kb(rows)
+
+
+def sc_channel(st, n):
+    e = st["channels"][n]
+    lines = [f"{kind_emoji(e['kind'])} {n}", f"Type: {e['kind']}", f"Channel ID: {e['chat_id']}", "",
+             "⏰ Post ka time:"]
+    lines += [f"   • {fmt12(t)}" for t in e["times"]] or ["   (koi time nahi - ➕ se add karo)"]
+    rows = []
+    if e["times"]:
+        lines += ["", "Time hatana ho to uspe tap karo 👇"]
+        btns = [Btn(f"❌ {fmt12(t)}", f"td:{n}:{t.replace(':', '')}") for t in e["times"]]
+        rows += [btns[i:i + 2] for i in range(0, len(btns), 2)]
+    rows += [
+        [Btn("➕ Time Add Karo", f"ta:{n}")],
+        [Btn("👁 Preview", f"pv:{n}"), Btn("🚀 Live Post", f"lv:{n}")],
+        [Btn("🎭 Type Badlo", f"ky:{n}"), Btn("🗑 Channel Hatao", f"rm:{n}")],
+        [Btn("⬅ Back", "main")],
+    ]
+    return "\n".join(lines), kb(rows)
+
+
+def sc_hour(n):
+    rows = [[Btn(str(h), f"th:{n}:{h}") for h in range(r, r + 4)] for r in (1, 5, 9)]
+    rows.append([Btn("⬅ Back", f"ch:{n}")])
+    return (f"⏰ {n} - naya time\n\nPehle ghanta chuno 👇\n"
+            f"(ya seedha type karo, jaise: 6:17 PM)"), kb(rows)
+
+
+def sc_minute(n, h):
+    mins = list(range(0, 60, 5))
+    rows = [[Btn(f"{h}:{m:02d}", f"tm:{n}:{h}:{m}") for m in mins[i:i + 4]] for i in range(0, 12, 4)]
+    rows.append([Btn("⬅ Back", f"ta:{n}")])
+    return f"⏰ {n} - {h} baje, ab minute chuno 👇", kb(rows)
+
+
+def sc_ampm(n, h, m):
+    rows = [[Btn("🌅 AM (subah)", f"tp:{n}:{h}:{m}:AM"), Btn("🌙 PM (dopahar/raat)", f"tp:{n}:{h}:{m}:PM")],
+            [Btn("⬅ Back", f"th:{n}:{h}")]]
+    return f"⏰ {n} - {h}:{m:02d}  AM ya PM? 👇", kb(rows)
+
+
+def sc_kinds(text, cb_prefix, current=None, back="main"):
+    rows = [[Btn(f"{k['emoji']} {k['title']}" + ("  ✔" if name == current else ""), f"{cb_prefix}:{name}")]
+            for name, k in KINDS.items()]
+    rows.append([Btn("⬅ Back" if back != "main" else "❌ Cancel", back)])
+    return text, kb(rows)
+
+
+def check_channel(ref):
+    info = tg("getChat", data={"chat_id": ref})["result"]
+    me = tg("getMe")["result"]["id"]
+    member = tg("getChatMember", data={"chat_id": info["id"], "user_id": me})["result"]
+    return info, member.get("status") == "administrator"
+
+
+def extract_chat_ref(msg):
+    fo = msg.get("forward_origin") or {}
+    if fo.get("type") == "channel":
+        return str(fo["chat"]["id"])
+    if msg.get("forward_from_chat"):
+        return str(msg["forward_from_chat"]["id"])
+    t = (msg.get("text") or "").strip()
+    if re.fullmatch(r"-?\d{5,}", t):
+        return t
+    m = re.fullmatch(r"(?:https?://t\.me/|@)?([A-Za-z]\w{3,})", t)
+    return "@" + m.group(1) if m else None
+
+
+def run_job(chat, n, fn):
+    """lambi post banane wala kaam; ek channel pe ek baar mein ek hi"""
+    with LOCK:
+        if n in BUSY:
+            return say(chat, f"⏳ {n} ki post pehle se ban rahi hai, thoda ruko.")
+        BUSY.add(n)
     try:
-        info = tg("getChat", data={"chat_id": chat_id})["result"]
-        me = tg("getMe")["result"]["id"]
-        member = tg("getChatMember", data={"chat_id": chat_id, "user_id": me})["result"]
-    except Exception as e:
-        return say(chat, f"Channel access nahi mila. Chat id sahi hai? Bot ko channel mein admin banaya?\n{str(e)[:150]}")
-    if member.get("status") != "administrator":
-        return say(chat, "Bot us channel mein admin nahi hai. Pehle admin banao (Post messages ON), phir /add karo.")
-    with LOCK:
-        old = find_name(st, name)
-        if old:
-            name = old
-        st["channels"][name] = {"chat_id": chat_id, "kind": kind, "times": times or KINDS[kind]["times"]}
-        save_state(st)
-    e = st["channels"][name]
-    say(chat, f"✅ Add ho gaya: {name} ({info.get('title', '')})\nType: {e['kind']}\nTime: {', '.join(e['times'])}\n"
-              f"Check karne ke liye: /test {name}")
+        fn()
+    finally:
+        with LOCK:
+            BUSY.discard(n)
 
 
-def cmd_remove(st, chat, args):
-    if not args:
-        return say(chat, "Aise likho: /remove TheHeartVerse")
-    with LOCK:
-        n = find_name(st, args[0])
-        if not n:
-            return say(chat, "Ye channel list mein nahi hai. /list dekho.")
-        del st["channels"][n]
-        save_state(st)
-    say(chat, f"🗑 {n} hata diya. Ab isme auto post nahi hogi.")
+# ---------- callbacks (button taps) ----------
+def handle_callback(st, cq):
+    uid = cq["from"]["id"]
+    msg = cq.get("message") or {}
+    chat = (msg.get("chat") or {}).get("id")
+    mid = msg.get("message_id")
+    answered = []
 
+    def ans(text=None, alert=False):
+        if answered:
+            return
+        answered.append(1)
+        d = {"callback_query_id": cq["id"]}
+        if text:
+            d.update(text=text, show_alert=alert)
+        try:
+            tg("answerCallbackQuery", data=d)
+        except Exception as e:
+            log.warning("answerCallback fail: %s", e)
 
-def cmd_list(st, chat):
-    if not st["channels"]:
-        return say(chat, "Koi channel nahi hai. /add use karo.")
-    lines = [f"{n} | {e['kind']} | {e['chat_id']} | {', '.join(e['times'])}" for n, e in st["channels"].items()]
-    say(chat, "📋 Channels:\n" + "\n".join(lines))
-
-
-def cmd_times(st, chat, args):
-    if len(args) < 2 or not valid_times(args[1]):
-        return say(chat, "Aise likho: /times TheHeartVerse 09:00,21:30")
-    with LOCK:
-        n = find_name(st, args[0])
-        if not n:
-            return say(chat, "Ye channel list mein nahi hai.")
-        st["channels"][n]["times"] = valid_times(args[1])
-        save_state(st)
-    say(chat, f"⏰ {n} ka time: {', '.join(st['channels'][n]['times'])}")
-
-
-def cmd_test(st, chat, args):
-    if not args:
-        return say(chat, "Aise likho: /test TheHeartVerse")
-    n = find_name(st, args[0])
-    if not n:
-        return say(chat, "Ye channel list mein nahi hai. /list dekho.")
-    live = len(args) > 1 and args[1].lower() == "live"
-    say(chat, f"⏳ {n} ki {'LIVE ' if live else 'preview '}post ban rahi hai (30-60 sec)...")
     try:
-        publish(n, st, target=None if live else chat, record=live)
-        if live:
+        if uid not in ADMIN_IDS:
+            return ans("Ye bot sirf owner ke liye hai.", True)
+        if chat is None:
+            return
+        parts = (cq.get("data") or "").split(":")
+        act = parts[0]
+        if act not in ("nk", "th", "tm"):
+            PENDING.pop(uid, None)
+
+        n = None
+        if act not in ("main", "na", "nk"):
+            n = find_name(st, parts[1]) if len(parts) > 1 else None
+            if not n:
+                ans("Ye channel ab list mein nahi hai.", True)
+                return show(chat, mid, *sc_main(st))
+
+        if act == "main":
+            show(chat, mid, *sc_main(st))
+        elif act == "ch":
+            show(chat, mid, *sc_channel(st, n))
+
+        # --- naya channel ---
+        elif act == "na":
+            PENDING[uid] = {"step": "cid"}
+            show(chat, mid,
+                 "➕ Naya Channel\n\n1) Bot ko us channel mein Admin banao (Post messages ON)\n"
+                 "2) Phir yahan bhejo:\n"
+                 "   • channel ka @username ya -100... id\n"
+                 "   • ya channel ka koi bhi post yahan FORWARD kar do (sabse aasan)",
+                 kb([[Btn("❌ Cancel", "main")]]))
+        elif act == "nk":
+            p = PENDING.get(uid)
+            if not p or p.get("step") != "kind" or parts[1] not in KINDS:
+                ans("Session khatam ho gaya, dobara Naya Channel dabao.", True)
+                return show(chat, mid, *sc_main(st))
+            PENDING.pop(uid, None)
+            kind = parts[1]
             with LOCK:
+                st["channels"][p["name"]] = {"chat_id": p["chat_id"], "kind": kind, "times": list(KINDS[kind]["times"])}
                 save_state(st)
-            say(chat, f"✅ {n} pe post ho gayi.")
+            ans("✅ Channel add ho gaya")
+            show(chat, mid, *sc_channel(st, p["name"]))
+
+        # --- time add ---
+        elif act == "ta":
+            PENDING[uid] = {"step": "time", "name": n}
+            show(chat, mid, *sc_hour(n))
+        elif act == "th":
+            show(chat, mid, *sc_minute(n, int(parts[2])))
+        elif act == "tm":
+            show(chat, mid, *sc_ampm(n, int(parts[2]), int(parts[3])))
+        elif act == "tp":
+            ok, text = add_time(st, n, to24(int(parts[2]), int(parts[3]), parts[4]))
+            ans(text, not ok)
+            show(chat, mid, *sc_channel(st, n))
+
+        # --- time remove ---
+        elif act == "td":
+            t = f"{parts[2][:2]}:{parts[2][2:]}"
+            with LOCK:
+                if t in st["channels"][n]["times"]:
+                    st["channels"][n]["times"].remove(t)
+                    save_state(st)
+            ans(f"🗑 {fmt12(t)} hata diya")
+            show(chat, mid, *sc_channel(st, n))
+
+        # --- preview / live ---
+        elif act == "pv":
+            ans("⏳ Preview ban raha hai (30-60 sec)...")
+
+            def job():
+                try:
+                    publish(n, st, target=chat, record=False)
+                except Exception as e:
+                    say(chat, f"❌ Fail: {str(e)[:300]}")
+                say(chat, *sc_channel(st, n))
+            run_job(chat, n, job)
+        elif act == "lv":
+            show(chat, mid, f"🚀 {n} pe ASLI post jayegi.\n\nPakka?",
+                 kb([[Btn("✅ Haan, post karo", f"lg:{n}"), Btn("❌ Cancel", f"ch:{n}")]]))
+        elif act == "lg":
+            ans("⏳ Post ban rahi hai...")
+            show(chat, mid, f"⏳ {n} ki live post ban rahi hai (30-60 sec)...")
+
+            def job():
+                try:
+                    publish(n, st)
+                    with LOCK:
+                        save_state(st)
+                    say(chat, f"✅ {n} pe post ho gayi.")
+                except Exception as e:
+                    say(chat, f"❌ Fail: {str(e)[:300]}")
+                say(chat, *sc_channel(st, n))
+            run_job(chat, n, job)
+
+        # --- type badlo ---
+        elif act == "ky":
+            show(chat, mid, *sc_kinds(f"🎭 {n} ka type chuno 👇\n(content aur image ka style isse decide hota hai)",
+                                      f"ks:{n}", st["channels"][n]["kind"], f"ch:{n}"))
+        elif act == "ks":
+            kind = parts[2]
+            if kind in KINDS:
+                with LOCK:
+                    st["channels"][n]["kind"] = kind
+                    save_state(st)
+                ans(f"✅ Type: {KINDS[kind]['title']}")
+            show(chat, mid, *sc_channel(st, n))
+
+        # --- channel hatao ---
+        elif act == "rm":
+            show(chat, mid, f"🗑 {n} ko hata dein?\n\nIsme auto post band ho jayegi.",
+                 kb([[Btn("✅ Haan, hatao", f"ry:{n}"), Btn("❌ Cancel", f"ch:{n}")]]))
+        elif act == "ry":
+            with LOCK:
+                st["channels"].pop(n, None)
+                save_state(st)
+            ans(f"🗑 {n} hata diya")
+            show(chat, mid, *sc_main(st))
+        else:
+            ans()
     except Exception as e:
-        say(chat, f"❌ Fail: {str(e)[:300]}")
+        log.exception("callback error")
+        ans(f"❌ Error: {str(e)[:150]}", True)
+    finally:
+        ans()
+
+
+# ---------- messages (/start + jab bot text/forward maang raha ho) ----------
+def handle_pending(st, chat, uid, msg):
+    p = PENDING[uid]
+    step = p["step"]
+    text = (msg.get("text") or "").strip()
+    cancel = kb([[Btn("❌ Cancel", "main")]])
+
+    if step == "cid":
+        ref = extract_chat_ref(msg)
+        if not ref:
+            return say(chat, "Samajh nahi aaya. @username ya -100... id bhejo, ya channel ka post forward karo.", cancel)
+        try:
+            info, is_admin = check_channel(ref)
+        except Exception as e:
+            return say(chat, f"Channel access nahi mila. Id/username sahi hai? Bot channel mein admin hai?\n{str(e)[:150]}", cancel)
+        if not is_admin:
+            return say(chat, "Bot us channel mein admin nahi hai. Pehle admin banao (Post messages ON), phir dobara bhejo.", cancel)
+        p.update(chat_id=str(info["id"]), title=info.get("title", ""))
+        if info.get("username"):
+            return finish_name(st, chat, uid, p, info["username"])
+        p["step"] = "name"
+        return say(chat, f"✅ Channel mil gaya: {p['title']}\n\nIs channel ka koi chhota naam likho (letters/numbers/_, jaise MyFacts). "
+                         "Yahi image par @naam ki tarah dikhega.", cancel)
+
+    if step == "name":
+        name = text.lstrip("@")
+        if not re.fullmatch(r"\w{3,32}", name):
+            return say(chat, "Naam 3-32 letters/numbers/underscore ka ho (space nahi). Dobara likho.", cancel)
+        return finish_name(st, chat, uid, p, name)
+
+    if step == "time":
+        t24 = parse12(text)
+        n = p["name"]
+        back = kb([[Btn("⬅ Back", f"ch:{n}")]])
+        if not t24:
+            return say(chat, "⚠️ 12 ghante wala time AM/PM ke saath likho, jaise 6:30 PM ya 9 am\n(18:00 jaisa 24 ghante wala nahi chalega)", back)
+        PENDING.pop(uid, None)
+        ok, res = add_time(st, n, t24)
+        say(chat, res)
+        return say(chat, *sc_channel(st, n))
+
+
+def finish_name(st, chat, uid, p, name):
+    if not re.fullmatch(r"\w{3,32}", name):
+        return say(chat, "Is channel ka username 3-32 letters/numbers/_ ka hona chahiye, dusra naam likho.",
+                   kb([[Btn("❌ Cancel", "main")]]))
+    old = find_name(st, name)
+    if old:
+        PENDING.pop(uid, None)
+        say(chat, f"{old} pehle se list mein hai.")
+        return say(chat, *sc_channel(st, old))
+    p.update(step="kind", name=name)
+    say(chat, *sc_kinds(f"✅ Channel mil gaya: {p['title'] or name}\nNaam: {name}\n\nAb iska type chuno 👇",
+                        "nk"))
 
 
 def handle_message(st, msg):
-    text = (msg.get("text") or "").strip()
-    if not text.startswith("/"):
-        return
     chat = msg["chat"]["id"]
+    if msg["chat"].get("type") != "private":
+        return
     uid = msg.get("from", {}).get("id")
-    parts = text.split()
-    cmd, args = parts[0].lower().split("@")[0], parts[1:]
-    if cmd == "/myid":
+    text = (msg.get("text") or "").strip()
+    if text.startswith("/myid"):
         return say(chat, f"Tumhara user id: {uid}\n(isko ADMIN_IDS variable mein daalo)")
     if not ADMIN_IDS:
         return say(chat, "ADMIN_IDS set nahi hai. /myid se apna id lo aur Railway variable ADMIN_IDS mein daalo.")
     if uid not in ADMIN_IDS:
         return say(chat, "Ye bot sirf owner ke liye hai.")
-    if cmd in ("/start", "/help"):
-        say(chat, HELP)
-    elif cmd == "/add":
-        cmd_add(st, chat, args)
-    elif cmd in ("/remove", "/del"):
-        cmd_remove(st, chat, args)
-    elif cmd == "/list":
-        cmd_list(st, chat)
-    elif cmd == "/times":
-        cmd_times(st, chat, args)
-    elif cmd == "/test":
-        cmd_test(st, chat, args)
-    else:
-        say(chat, "Ye command nahi pata.\n\n" + HELP)
+    if text.startswith("/"):
+        PENDING.pop(uid, None)
+        cmd = text.split()[0].lower().split("@")[0]
+        if cmd in ("/start", "/menu", "/help", "/cancel", "/manage"):
+            return say(chat, *sc_main(st))
+        return say(chat, "Sab kuch buttons se hota hai 👇  (menu ke liye /start)", None)
+    if uid in PENDING:
+        handle_pending(st, chat, uid, msg)
 
 
 def command_loop(st):
@@ -673,12 +931,15 @@ def command_loop(st):
         pass
     while True:
         try:
-            r = tg("getUpdates", data={"offset": offset, "timeout": 50, "allowed_updates": json.dumps(["message"])})
+            r = tg("getUpdates", data={"offset": offset, "timeout": 50,
+                                       "allowed_updates": json.dumps(["message", "callback_query"])})
             for u in r["result"]:
                 offset = u["update_id"] + 1
+                # har kaam alag thread mein, taaki preview/live ke dauran buttons atke nahi
                 if "message" in u:
-                    # har command alag thread mein, taaki /test ke dauran bot atke nahi
                     threading.Thread(target=handle_message, args=(st, u["message"]), daemon=True).start()
+                elif "callback_query" in u:
+                    threading.Thread(target=handle_callback, args=(st, u["callback_query"]), daemon=True).start()
         except Exception as e:
             log.error("poll error: %s", e)
             time.sleep(5)
