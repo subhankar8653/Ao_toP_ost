@@ -55,6 +55,8 @@ KINDS = {
     #   quote_marks      : caption mein quote “ ” lagao ya nahi
     #   show_weekday     : caption date mein din (Monday) dikhao ya nahi
     #   rules            : Gemini ko content ke rules
+    #   schema/required  : (optional) Gemini se kaun-kaun si JSON keys chahiye;  caption : CAPTIONS mein kaun sa design
+    #   overlay          : False = image par text nahi, sirf photo;  source : (optional) asli data ka source (SOURCES)
     # ------------------------------------------------------------------
     "love": {
         "emoji": "\u2764\ufe0f", "title": "Love Quotes",
@@ -113,6 +115,92 @@ KINDS = {
         "image_style": "vivid high-quality realistic photo or detailed digital art related to the fact, "
                        "dramatic lighting, no text",
     },
+    "startup": {
+        "emoji": "\U0001F4A1", "title": "Startup Ideas",
+        "img_label": "STARTUP IDEA OF THE DAY", "follow": "FOLLOW FOR DAILY STARTUP IDEAS",
+        "font": ("anton", 150, 1.12, True, "bebas", 64),
+        "big_headline": True, "quote_marks": False, "overlay": True, "caption": "startup",
+        "rules": "Give ONE practical, original startup/business idea that a normal person in India can start with low "
+                 "investment. It must have a clear problem, a clear customer and a clear way to earn. name = catchy brand "
+                 "name (1-2 words, e.g. SeniorSathi). No generic ideas, no 'AI app for everything'.",
+        "schema": """- Tone: simple, clear, motivating. Hinglish = casual Roman-script Hindi, easy words.
+- headline = short English hook about the problem or idea (max 8 words, no emojis), shown big on the image.
+- highlight = 1-3 consecutive words copied EXACTLY from the headline that carry the key idea.
+- name = the startup's brand name.
+- tagline_en = one line on what the startup is (max 14 words). tagline_hi = same in Roman Hinglish.
+- problem_en = 2 short lines: the problem and what the startup offers. problem_hi = same in Roman Hinglish.
+- why_en = 2 short lines on why it works (demand and how it earns). why_hi = same in Roman Hinglish.
+- hashtags = array of exactly 3 hashtags like #StartupIdea #BusinessIdea #EntrepreneurMindset (topic-relevant).
+- image_prompt = English, one vivid scene matching the idea, style: {image_style}. Never include any text/letters in the image.
+Return ONLY JSON with keys: headline, highlight, name, tagline_en, tagline_hi, problem_en, problem_hi, why_en, why_hi, hashtags, image_prompt.""",
+        "required": ("headline", "name", "tagline_en", "tagline_hi", "problem_en", "problem_hi",
+                    "why_en", "why_hi", "hashtags", "image_prompt"),
+        "times": ["10:00"],
+        "accent": (255, 190, 60),
+        "about": "One fresh, practical startup idea every day for aspiring Indian entrepreneurs.",
+        "themes": ["elderly care", "education", "agri-tech", "food business", "pet services", "local services",
+                   "tourism", "fitness", "women entrepreneurs", "sustainability", "gig economy", "kids and parents",
+                   "small shop digitisation", "rural India", "tools for small businesses", "home services",
+                   "second-hand market", "health and wellness", "content creation", "logistics"],
+        "image_style": "modern cinematic startup scene, glowing lightbulb or city skyline at dusk, entrepreneur "
+                       "silhouette, deep navy and gold tones, no text",
+    },
+    "cook": {
+        "emoji": "\U0001F373", "title": "Recipes & Hacks",
+        "img_label": "RECIPE OF THE DAY", "follow": "FOLLOW FOR DAILY RECIPES",
+        "font": ("archivo", 104, 1.2, True, "bebas", 64),
+        "big_headline": True, "quote_marks": False, "overlay": False, "caption": "cook",
+        "rules": "English only. If the theme starts with 'recipe' write a full easy recipe (post_type = recipe), if it starts "
+                 "with 'hack' write one genuinely useful kitchen hack (post_type = hack). Indian-home friendly, realistic "
+                 "quantities, accurate and SAFE cooking advice only.",
+        "schema": """- Tone: friendly, simple, short lines.
+- post_type = recipe or hack.
+- headline = dish or hack title (max 7 words, no emojis).
+- emoji = one fitting food/kitchen emoji.
+- intro = one tasty line (max 16 words).
+- ingredients = array of at most 8 short strings with quantity, e.g. Paneer cubes (200g). For a hack: what you need (may be empty).
+- steps = array of 3-6 short steps (each max 18 words, no numbering).
+- tip = one short pro tip (max 18 words).
+- hashtags = array of exactly 3 food hashtags.
+- image_prompt = English, the finished dish (or the hack's main item), style: {image_style}. Never include any text/letters in the image.
+Return ONLY JSON with keys: post_type, headline, emoji, intro, ingredients, steps, tip, hashtags, image_prompt.""",
+        "required": ("post_type", "headline", "intro", "ingredients", "steps", "hashtags", "image_prompt"),
+        "times": ["12:30", "19:30"],
+        "accent": (255, 140, 60),
+        "about": "Easy tasty recipes and smart kitchen hacks for home cooks.",
+        "themes": ["recipe: quick breakfast", "recipe: paneer", "recipe: street food at home", "recipe: healthy snacks",
+                   "recipe: one-pot dinner", "recipe: sweet dessert", "recipe: dal and sabzi", "recipe: rolls and wraps",
+                   "recipe: egg dishes", "recipe: rice dishes", "recipe: parathas", "recipe: monsoon snacks",
+                   "recipe: kids tiffin", "hack: kitchen time-savers", "hack: storage and freshness",
+                   "hack: cleaning the kitchen", "hack: cooking mistakes to avoid", "hack: spice and flavour tricks",
+                   "hack: fridge and leftovers", "hack: budget cooking"],
+        "image_style": "professional food photography, close-up of the finished dish on a rustic wooden table, warm "
+                       "natural light, fresh garnish, shallow depth of field, appetizing, no text",
+    },
+    "timeline": {
+        "emoji": "\U0001F570", "title": "Today In History",
+        "img_label": "TODAY IN HISTORY", "follow": "FOLLOW FOR DAILY HISTORY",
+        "font": ("archivo", 104, 1.2, True, "bebas", 64),
+        "big_headline": True, "quote_marks": False, "overlay": False, "caption": "timeline",
+        "source": "onthisday",
+        "rules": "Pick exactly 3 interesting events that happened on TODAY's date (same day and month, any year). Years must "
+                 "be exact and facts 100% true. Mix different fields. Tragic events: one respectful line, no graphic detail. "
+                 "The theme is only a soft hint.",
+        "schema": """- Tone: clear and engaging. Hinglish = casual Roman-script Hindi, easy words.
+- headline = short English hook for the date (max 8 words, no emojis).
+- events = array of exactly 3 objects, each with keys year (number), en (one line, max 22 words), hi (same in Roman Hinglish, max 22 words), emoji (one fitting emoji). Oldest year first.
+- hashtags = array of exactly 5 hashtags: #HistoryFacts #TodayInHistory, the date like #25July, plus 2 topic hashtags.
+- image_prompt = English, one iconic scene of the most visual event, style: {image_style}. No close-up faces, never include any text/letters in the image.
+Return ONLY JSON with keys: headline, events, hashtags, image_prompt.""",
+        "required": ("headline", "events", "hashtags", "image_prompt"),
+        "times": ["07:00"],
+        "accent": (212, 165, 90),
+        "about": "What happened on this exact date in history: discoveries, firsts, milestones.",
+        "themes": ["science and discovery", "inventions", "sports", "film and music", "India", "space",
+                   "leaders and politics", "firsts and records", "nature", "world events"],
+        "image_style": "vintage sepia historical illustration, old parchment texture, antique clock, dramatic "
+                       "cinematic light, no text",
+    },
 }
 
 # pehli baar chalne par ye 3 channel apne aap add ho jaate hain
@@ -120,7 +208,11 @@ DEFAULTS = {
     "TheHeartVerse": ("love", "@TheHeartVerse"),
     "RiseFuelQuotes": ("motivation", "@RiseFuelQuotes"),
     "FactForge": ("fact", "@FactForge"),
+    "StartSpark": ("startup", "@StartSpark"),
+    "TheCookTable": ("cook", "@TheCookTable"),
+    "TimelineToday": ("timeline", "@TimelineToday"),
 }
+ORIGINAL_DEFAULTS = {"TheHeartVerse", "RiseFuelQuotes", "FactForge"}
 
 
 def full_cfg(entry):
@@ -140,9 +232,13 @@ def load_state():
         st = {}
     st.setdefault("done", [])
     st.setdefault("history", {})
-    if "channels" not in st:
-        st["channels"] = {n: {"chat_id": c, "kind": k, "times": KINDS[k]["times"]}
-                          for n, (k, c) in DEFAULTS.items()}
+    if "seeded" not in st:   # purani state mein pehle wale 3 pehle hi seed maane jaate hain
+        st["seeded"] = sorted(ORIGINAL_DEFAULTS) if "channels" in st else []
+    st.setdefault("channels", {})
+    for n, (k, c) in DEFAULTS.items():
+        if n not in st["seeded"]:
+            st["seeded"].append(n)
+            st["channels"].setdefault(n, {"chat_id": c, "kind": k, "times": list(KINDS[k]["times"])})
     return st
 
 
@@ -160,7 +256,37 @@ def save_state(st):
 # ----------------------------------------------------------------------
 # Content (Gemini)
 # ----------------------------------------------------------------------
-def gemini_json(prompt, tries=3):
+DEFAULT_REQUIRED = ("headline", "english", "hinglish", "closing", "image_prompt", "hashtags")
+DEFAULT_SCHEMA = """- Tone: modern, relatable, Gen-Z friendly, short punchy lines. Hinglish should sound like casual texting, simple words.
+- headline = very short English hook (max 8 words, no emojis). For facts it is the big text on the image, make it a punchy hook.
+- highlight = 1-3 consecutive words copied EXACTLY from the image text (the headline for facts, the english field otherwise) that carry the key idea; they will be shown in colour.
+- hashtags = array of exactly 3 hashtags, first one is #{name}.
+- image_prompt = English, one vivid scene matching the post, style: {image_style}. Never include any text/letters in the image.
+Return ONLY JSON with keys: headline, english, hinglish, closing, highlight, image_prompt, hashtags."""
+
+
+def onthisday_events(now):
+    """Wikipedia 'On this day' se aaj ki date ke asli events (free). Na mile to '' (tab Gemini apni yaad se likhta hai)"""
+    try:
+        r = requests.get(f"https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/events/{now.month:02d}/{now.day:02d}",
+                         headers={"User-Agent": "TelegramAutoPoster/1.0"}, timeout=30)
+        r.raise_for_status()
+        ev = [e for e in r.json().get("events", []) if e.get("text") and e.get("year") and len(e["text"]) < 230]
+        random.shuffle(ev)
+        ev = sorted(ev[:40], key=lambda e: e["year"])
+        if not ev:
+            return ""
+        lines = "\n".join(f"{e['year']}: {e['text']}" for e in ev)
+        return "Verified real events that happened on this exact date (Wikipedia). Pick ONLY from these, keep the year exact:\n" + lines + "\n"
+    except Exception as e:
+        log.warning("onthisday fail: %s", e)
+        return ""
+
+
+SOURCES = {"onthisday": onthisday_events}
+
+
+def gemini_json(prompt, required=DEFAULT_REQUIRED, tries=3):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -176,9 +302,17 @@ def gemini_json(prompt, tries=3):
             data = json.loads(text)
             if isinstance(data, list):
                 data = data[0]
-            for k in ("headline", "english", "hinglish", "closing", "image_prompt", "hashtags"):
+            for k in required:
                 if k not in data:
                     raise ValueError(f"missing {k}")
+            for k in ("hashtags", "ingredients", "steps"):
+                if k in data and not isinstance(data[k], list):
+                    raise ValueError(f"{k} list nahi hai")
+            if "events" in required:
+                ev = data["events"]
+                if not isinstance(ev, list) or not ev or not all(
+                        isinstance(e, dict) and all(x in e for x in ("year", "en", "hi")) for e in ev):
+                    raise ValueError("events galat format")
             return data
         except Exception as e:
             last = e
@@ -190,24 +324,23 @@ def gemini_json(prompt, tries=3):
 def make_content(name, cfg, history):
     theme = random.choice(cfg["themes"])
     avoid = "\n".join(f"- {h}" for h in history[-40:]) or "(none)"
+    now = datetime.now(TZ)
+    fn = SOURCES.get(cfg.get("source"))
+    facts = fn(now) if fn else ""
+    schema = cfg.get("schema", DEFAULT_SCHEMA).format(name=name, image_style=cfg["image_style"])
     prompt = f"""You write daily posts for a Telegram channel.
 Channel: {name}
 Niche: {cfg['about']}
 Today's theme: {theme}
-Today's date: {datetime.now(TZ):%A, %d %B %Y}
-
+Today's date: {now:%A, %d %B %Y}
+{facts}
 Rules:
 - Content must be ORIGINAL (never copy famous copyrighted quotes word-for-word).
 - Must be completely different from these recent posts:
 {avoid}
 - {cfg['rules']}
-- Tone: modern, relatable, Gen-Z friendly, short punchy lines. Hinglish should sound like casual texting, simple words.
-- headline = very short English hook (max 8 words, no emojis). For facts it is the big text on the image, make it a punchy hook.
-- highlight = 1-3 consecutive words copied EXACTLY from the image text (the headline for facts, the english field otherwise) that carry the key idea; they will be shown in colour.
-- hashtags = array of exactly 3 hashtags, first one is #{name}.
-- image_prompt = English, one vivid scene matching the post, style: {cfg['image_style']}. Never include any text/letters in the image.
-Return ONLY JSON with keys: headline, english, hinglish, closing, highlight, image_prompt, hashtags."""
-    return gemini_json(prompt)
+{schema}"""
+    return gemini_json(prompt, cfg.get("required", DEFAULT_REQUIRED))
 
 
 # ----------------------------------------------------------------------
@@ -335,7 +468,12 @@ def make_image(cfg, data, name):
     kind = cfg["kind"]
     main_style, start_fs, lh_mul, upper, h_style, h_size = cfg["font"]
 
-    bg = ai_background(data["image_prompt"]) or gradient_bg(acc)
+    bg = ai_background(data["image_prompt"])
+    if bg is not None and not cfg.get("overlay", True):
+        out = io.BytesIO()          # is channel ki image par text nahi, sirf photo
+        bg.save(out, "JPEG", quality=93)
+        return out.getvalue()
+    bg = bg or gradient_bg(acc)
     base = bg.convert("RGBA")
     base = Image.alpha_composite(base, Image.new("RGBA", (W, H), (4, 4, 14, 125)))
     vig = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -449,7 +587,7 @@ def fancy(text, style="sans"):
 RULE = "\u2501" * 12
 
 
-def build_caption(name, cfg, d):
+def caption_quote(name, cfg, d):
     now = datetime.now(TZ)
     label, qstyle = cfg["cap_label"], cfg["quote_style"]
     clean = lambda s: str(s).strip().strip('"\u201c\u201d')
@@ -474,6 +612,97 @@ def build_caption(name, cfg, d):
         f"\u2726 {B('SHARE WITH SOMEONE WHO NEEDS THIS')}\n"
         f"<blockquote><b>{esc(tags)}</b></blockquote>"
     )
+
+
+def _esc(t):
+    return html.escape(str(t).strip(), quote=False)
+
+
+def _clean(s):
+    return str(s).strip().strip('"\u201c\u201d')
+
+
+def _tags(d, n):
+    return " ".join(t if t.startswith("#") else "#" + t for t in d["hashtags"][:n])
+
+
+def caption_startup(name, cfg, d):
+    now = datetime.now(TZ)
+    date = f"{now:%A} \u2022 {ordinal(now.day)} {now:%B}"
+    idea = _esc(_clean(d["name"]))
+
+    def block(tagline, problem, why, why_label):
+        return (f"Startup Idea:\n\U0001F4F1 \"{idea}\" \u2013 {_esc(_clean(tagline))}\n\n"
+                f"\U0001F465 {_esc(problem)}\n\n\U0001F4C8 {why_label}\n{_esc(why)}")
+    en = block(d["tagline_en"], d["problem_en"], d["why_en"], "Why it works:")
+    hi = block(d["tagline_hi"], d["problem_hi"], d["why_hi"], "Kyu chalega:")
+    return (
+        f"\U0001F680 <b>#{_esc(name)} \u2013 Startup Idea of the Day</b>\n"
+        f"\U0001F4C5 <b>{date}</b>\n{RULE}\n\n"
+        f"\U0001F1EC\U0001F1E7 <b>English:</b>\n<blockquote>{en}</blockquote>\n"
+        f"---\n\n"
+        f"\U0001F1EE\U0001F1F3 <b>Hinglish:</b>\n<blockquote>{hi}</blockquote>\n"
+        f"---\n\n"
+        f"\U0001F4CC Follow \U0001F449 <b>@{_esc(name)}</b> for a new powerful idea every day!\n"
+        f"<blockquote>{_esc(_tags(d, 3))}</blockquote>"
+    )
+
+
+def caption_cook(name, cfg, d, short=False):
+    now = datetime.now(TZ)
+    date = f"{now:%A} \u2022 {ordinal(now.day)} {now:%B}"
+    is_hack = str(d.get("post_type", "")).lower().startswith("h")
+    label = "Kitchen Hack of the Day" if is_hack else "Recipe of the Day"
+    emoji = d.get("emoji") or ("\U0001F4A1" if is_hack else "\U0001F958")
+    ings = [x for x in (d.get("ingredients") or []) if str(x).strip()]
+    steps = [x for x in (d.get("steps") or []) if str(x).strip()]
+    need = "What you need" if is_hack else "Ingredients"
+    how = "How to do it" if is_hack else "Quick Recipe"
+    parts = [f"{_esc(emoji)} <b>{_esc(_clean(d['headline']))}</b>"]
+    if not short:
+        parts.append(_esc(d["intro"]))
+    if ings:
+        parts += ["", f"\U0001F4DD <b>{need}:</b>"] + [f"\u2022 {_esc(i)}" for i in ings]
+    if steps:
+        parts += ["", f"\U0001F525 <b>{how}:</b>"] + [f"{k}. {_esc(s)}" for k, s in enumerate(steps, 1)]
+    if d.get("tip") and not short:
+        parts += ["", f"\U0001F4A1 <b>Pro Tip:</b> {_esc(d['tip'])}"]
+    body = "\n".join(parts)
+    cap = (f"\U0001F37D <b>#{_esc(name)} \u2013 {label}</b>\n"
+           f"\U0001F4C5 <b>{date}</b>\n{RULE}\n\n"
+           f"<blockquote>{body}</blockquote>\n\n"
+           f"\U0001F4CC Follow \U0001F449 <b>@{_esc(name)}</b> for daily tasty dishes &amp; easy recipes!\n"
+           f"<blockquote>{_esc(_tags(d, 3))}</blockquote>")
+    if not short and visible_len(cap) > 4000:      # Telegram limit 4096
+        return caption_cook(name, cfg, d, short=True)
+    return cap
+
+
+def caption_timeline(name, cfg, d):
+    now = datetime.now(TZ)
+    date = f"{now:%A} \u2013 {ordinal(now.day)} {now:%B}"
+    evs = d["events"][:3]
+    en = "\n".join(f"\U0001F537 {_esc(e['year'])} \u2013 {_esc(_clean(e['en']))} {_esc(e.get('emoji', ''))}" for e in evs)
+    hi = "\n".join(f"\U0001F537 {_esc(e['year'])} \u2013 {_esc(_clean(e['hi']))} {_esc(e.get('emoji', ''))}" for e in evs)
+    line = "\u25C7" + "\u2501" * 14 + "\u25C7"
+    return (
+        f"{line}\n"
+        f"\U0001F4C5 <b>{date}</b>\n"
+        f"\u3010 <b>Today In History</b> | #{_esc(name)} \u3011\n"
+        f"{line}\n\n"
+        f"\U0001F570 <b>English:</b>\n<blockquote>{en}</blockquote>\n"
+        f"\U0001F5E3 <b>Hinglish:</b>\n<blockquote>{hi}</blockquote>\n"
+        f"\U0001F501 Follow \U0001F449 <b>@{_esc(name)}</b> for daily historical facts &amp; events!\n"
+        f"<blockquote>{_esc(_tags(d, 5))}</blockquote>"
+    )
+
+
+CAPTIONS = {"quote": caption_quote, "startup": caption_startup, "cook": caption_cook, "timeline": caption_timeline}
+
+
+def build_caption(name, cfg, d):
+    """har kind ka apna caption design: KINDS mein 'caption' key se chuna jata hai"""
+    return CAPTIONS[cfg.get("caption", "quote")](name, cfg, d)
 
 
 # ----------------------------------------------------------------------
